@@ -1,0 +1,12 @@
+[package]
+name = "ludwig"
+version = "0.1.0"
+edition = "2024"
+authors = ["Martin Sandiford"]
+description = "A reimplementation of the Ludwig text editor in Rust."
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0.101"
+clap = { version = "4.5.58", features = ["derive"] }
+ropey = "1.6"
