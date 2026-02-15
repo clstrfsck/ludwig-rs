@@ -89,6 +89,16 @@ impl Frame {
         }
     }
 
+    pub fn cmd_insert_char(&mut self, lead_param: LeadParam) -> CmdResult {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.insert_chars(1, false),
+            LeadParam::Pint(n) => self.insert_chars(n, false),
+            LeadParam::Minus => self.insert_chars(1, true),
+            LeadParam::Nint(n) => self.insert_chars(n, true),
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
     pub fn cmd_overtype_text(&mut self, lead_param: LeadParam, text: &TrailParam) -> CmdResult {
         match lead_param {
             LeadParam::None | LeadParam::Plus => self.cmd_ovr_text(1, &text.str),
@@ -271,6 +281,21 @@ impl Frame {
 
 // Insert / Overwrite
 impl Frame {
+    fn insert_chars(&mut self, count: usize, move_dot: bool) -> CmdResult {
+        if count == 0 {
+            return CmdResult::Success;
+        }
+        let original_dot = self.dot();
+        self.insert(&" ".repeat(count));
+        self.set_mark(MarkId::Modified);
+        self.set_mark_at(MarkId::Last, original_dot);
+        if !move_dot {
+            // Dot moves when the text is inserted, so we need to move it back.
+            self.set_dot(original_dot);
+        }
+        CmdResult::Success
+    }
+
     fn cmd_ins_text(&mut self, count: usize, text: &str) -> CmdResult {
         if count == 0 {
             return CmdResult::Success;

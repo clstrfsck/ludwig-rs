@@ -138,6 +138,114 @@ fn test_marks_update_on_delete() {
     assert_eq!(frame.to_string(), "hello world");
 }
 
+// Insert Char (C command)
+
+#[test]
+fn insert_char_default_inserts_one_space() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_char(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hel lo");
+    // Positive: dot stays at original column
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+#[test]
+fn insert_char_positive_n_inserts_n_spaces() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_char(LeadParam::Pint(4));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hel    lo");
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+#[test]
+fn insert_char_negative_inserts_one_space_dot_follows() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_char(LeadParam::Minus);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hel lo");
+    // Negative: dot stays on original character (moves right by 1)
+    assert_eq!(f.dot(), Position::new(0, 4));
+}
+
+#[test]
+fn insert_char_negative_n_inserts_n_spaces_dot_follows() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_char(LeadParam::Nint(4));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hel    lo");
+    // Negative: dot stays on original character (moves right by 4)
+    assert_eq!(f.dot(), Position::new(0, 7));
+}
+
+#[test]
+fn insert_char_zero_is_noop() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_char(LeadParam::Pint(0));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello");
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+#[test]
+fn insert_char_sets_marks() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    f.cmd_insert_char(LeadParam::Pint(2));
+    // Modified mark set to dot after insert (col 5), then dot reset to 3
+    assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 5));
+    // Last mark set to original dot position
+    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 3));
+}
+
+#[test]
+fn insert_char_updates_marks_after_insertion() {
+    let mut f = Frame::from_str("hello world");
+    f.set_dot(Position::new(0, 5));
+    f.marks.set(MarkId::Numbered(1), Position::new(0, 3));  // before insert point
+    f.marks.set(MarkId::Numbered(2), Position::new(0, 8));  // after insert point
+    f.cmd_insert_char(LeadParam::Pint(3));
+    assert_eq!(f.to_string(), "hello    world");
+    // Mark before insert point: unchanged
+    assert_eq!(f.marks.get(MarkId::Numbered(1)).unwrap(), Position::new(0, 3));
+    // Mark after insert point: shifted right by 3
+    assert_eq!(f.marks.get(MarkId::Numbered(2)).unwrap(), Position::new(0, 11));
+}
+
+#[test]
+fn insert_char_in_virtual_space() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 8));
+    let result = f.cmd_insert_char(LeadParam::Pint(3));
+    assert!(result.is_success());
+    // Virtual space materialized, then 3 spaces inserted
+    assert_eq!(f.to_string(), "hello      ");
+    assert_eq!(f.dot(), Position::new(0, 8));
+}
+
+#[test]
+fn insert_char_at_beginning_of_line() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_insert_char(LeadParam::Pint(2));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "  hello");
+    assert_eq!(f.dot(), Position::new(0, 0));
+}
+
+#[test]
+fn insert_char_rejects_invalid_lead_param() {
+    let mut f = Frame::from_str("hello");
+    let result = f.cmd_insert_char(LeadParam::Pindef);
+    assert!(result.is_failure());
+}
+
 const M1: MarkId = MarkId::Numbered(1);
 const M2: MarkId = MarkId::Numbered(2);
 const M3: MarkId = MarkId::Numbered(3);

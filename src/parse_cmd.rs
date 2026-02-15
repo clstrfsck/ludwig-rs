@@ -29,6 +29,16 @@ fn parseable_commands() -> HashMap<String, ParseableCommand> {
             ]),
             tpars: 1,
         }),
+        ("c".to_string(), ParseableCommand {
+            lpars: HashSet::from([
+                LeadParam::None,
+                LeadParam::Plus,
+                LeadParam::Pint(0),
+                LeadParam::Minus,
+                LeadParam::Nint(0),
+            ]),
+            tpars: 0,
+        }),
         ("a".to_string(), ParseableCommand {
             lpars: HashSet::from([
                 LeadParam::None,
@@ -84,6 +94,7 @@ static TPARAM_CMDS: LazyLock<HashMap<&str, TparamCmd>> = LazyLock::new(|| {
 static NO_TPARAM_CMDS: LazyLock<HashMap<&str, NoTparamCmd>> = LazyLock::new(|| {
     HashMap::from([
         ("a", Frame::cmd_advance as NoTparamCmd),
+        ("c", Frame::cmd_insert_char as NoTparamCmd),
         ("d", Frame::cmd_delete_char as NoTparamCmd),
         ("j", Frame::cmd_jump as NoTparamCmd),
     ])
