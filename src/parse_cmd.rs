@@ -105,9 +105,10 @@ static NO_TPARAM_CMDS: LazyLock<HashMap<&str, NoTparamCmd>> = LazyLock::new(|| {
     HashMap::from([
         ("a", Frame::cmd_advance as NoTparamCmd),
         ("c", Frame::cmd_insert_char as NoTparamCmd),
-        ("l", Frame::cmd_insert_line as NoTparamCmd),
         ("d", Frame::cmd_delete_char as NoTparamCmd),
         ("j", Frame::cmd_jump as NoTparamCmd),
+        ("l", Frame::cmd_insert_line as NoTparamCmd),
+        ("sl", Frame::cmd_split_line as NoTparamCmd),
     ])
 });
 
@@ -136,6 +137,19 @@ impl ExecuteCommand for TparamParsedCommand {
     fn execute(&self, editor: &mut Editor) -> CmdResult {
         (self.cmd)(editor.current_frame_mut(), self.leading_param, &self.trailing_param)
     }
+}
+
+fn parse_command_name(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<String> {
+    let mut command_name = String::new();
+    // FIXME: This is a bit hacky, but it works for now
+    for _ in 1..=3 {
+        let next_char = chars.next().ok_or_else(|| anyhow::anyhow!("Syntax error."))?;
+        command_name.push(next_char);
+        if TPARAM_CMDS.contains_key(command_name.as_str()) || NO_TPARAM_CMDS.contains_key(command_name.as_str()) {
+            return Ok(command_name);
+        }
+    }
+    anyhow::bail!("Syntax error.");
 }
 
 pub fn parse_commands(input: &str) -> Result<Vec<Box<dyn ExecuteCommand>>> {
@@ -186,11 +200,8 @@ pub fn parse_commands(input: &str) -> Result<Vec<Box<dyn ExecuteCommand>>> {
         };
 
         // 2. Parse Command Name
-        // The command name is expected to be the next character
-        let command_name = match chars.next() {
-            Some(c) => c,
-            None => anyhow::bail!("Syntax error."),
-        }.to_string();
+        // The command name is expected to be the next characters
+        let command_name = parse_command_name(&mut chars)?;
 
         // 3. Validate Command and Leading Parameter
         let parseable_command = match parseable_commands.get(command_name.as_str()) {

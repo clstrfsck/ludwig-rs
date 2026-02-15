@@ -57,18 +57,6 @@ impl Frame {
         }
     }
 
-    pub fn cmd_jump(&mut self, lead_param: LeadParam) -> CmdResult {
-        match lead_param {
-            LeadParam::None | LeadParam::Plus => self.jump_fwd(1),
-            LeadParam::Pint(n) => self.jump_fwd(n),
-            LeadParam::Pindef => self.jump_end(),
-            LeadParam::Minus => self.jump_back(1),
-            LeadParam::Nint(n) => self.jump_back(n),
-            LeadParam::Nindef => self.jump_begin(),
-            LeadParam::Marker(id) => self.jump_to(self.mark_position(id)),
-        }
-    }
-
     pub fn cmd_delete_char(&mut self, lead_param: LeadParam) -> CmdResult {
         match lead_param {
             LeadParam::None | LeadParam::Plus => self.cmd_del_forward(1),
@@ -81,10 +69,12 @@ impl Frame {
         }
     }
 
-    pub fn cmd_insert_text(&mut self, lead_param: LeadParam, text: &TrailParam) -> CmdResult {
+    pub fn cmd_insert_char(&mut self, lead_param: LeadParam) -> CmdResult {
         match lead_param {
-            LeadParam::None | LeadParam::Plus => self.cmd_ins_text(1, &text.str),
-            LeadParam::Pint(n) => self.cmd_ins_text(n, &text.str),
+            LeadParam::None | LeadParam::Plus => self.insert_chars(1, false),
+            LeadParam::Pint(n) => self.insert_chars(n, false),
+            LeadParam::Minus => self.insert_chars(1, true),
+            LeadParam::Nint(n) => self.insert_chars(n, true),
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
         }
     }
@@ -99,13 +89,23 @@ impl Frame {
         }
     }
 
-    pub fn cmd_insert_char(&mut self, lead_param: LeadParam) -> CmdResult {
+    pub fn cmd_insert_text(&mut self, lead_param: LeadParam, text: &TrailParam) -> CmdResult {
         match lead_param {
-            LeadParam::None | LeadParam::Plus => self.insert_chars(1, false),
-            LeadParam::Pint(n) => self.insert_chars(n, false),
-            LeadParam::Minus => self.insert_chars(1, true),
-            LeadParam::Nint(n) => self.insert_chars(n, true),
+            LeadParam::None | LeadParam::Plus => self.cmd_ins_text(1, &text.str),
+            LeadParam::Pint(n) => self.cmd_ins_text(n, &text.str),
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
+    pub fn cmd_jump(&mut self, lead_param: LeadParam) -> CmdResult {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.jump_fwd(1),
+            LeadParam::Pint(n) => self.jump_fwd(n),
+            LeadParam::Pindef => self.jump_end(),
+            LeadParam::Minus => self.jump_back(1),
+            LeadParam::Nint(n) => self.jump_back(n),
+            LeadParam::Nindef => self.jump_begin(),
+            LeadParam::Marker(id) => self.jump_to(self.mark_position(id)),
         }
     }
 
@@ -114,6 +114,21 @@ impl Frame {
             LeadParam::None | LeadParam::Plus => self.cmd_ovr_text(1, &text.str),
             LeadParam::Pint(n) => self.cmd_ovr_text(n, &text.str),
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
+    pub fn cmd_split_line(&mut self, lead_param: LeadParam) -> CmdResult {
+        if lead_param == LeadParam::None || lead_param == LeadParam::Plus {
+            let original_dot = self.dot();
+            // We are not going to extend the line, so just clamp the dot to the actual text.
+            let clamped_dot = original_dot.clamp_to_text(&self.rope);
+            self.set_dot(clamped_dot);
+            self.insert_at(Position::new(clamped_dot.line, clamped_dot.column), "\n");
+            self.set_mark(MarkId::Modified);
+            self.set_mark_at(MarkId::Last, original_dot);
+            CmdResult::Success
+        } else {
+            CmdResult::Failure(CmdFailure::SyntaxError)
         }
     }
 }

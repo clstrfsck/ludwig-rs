@@ -533,3 +533,43 @@ fn overwrite_text_extends_line() {
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 35));
     assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 5));
 }
+
+#[test]
+fn split_line_at_bol() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_split_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "\nhello");
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+#[test]
+fn split_line_middle() {
+    let mut f = Frame::from_str("hello!");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_split_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hel\nlo!");
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+#[test]
+fn split_line_eol() {
+    let mut f = Frame::from_str("hello!");
+    f.set_dot(Position::new(0, 6));
+    let result = f.cmd_split_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello!\n");
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+#[test]
+fn split_line_vspace() {
+    let mut f = Frame::from_str("hello!");
+    f.set_dot(Position::new(0, 10));
+    let result = f.cmd_split_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello!\n");
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
