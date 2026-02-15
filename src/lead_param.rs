@@ -1,5 +1,6 @@
-use crate::mark::MarkId;
+use crate::marks::MarkId;
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum LeadParam {
     None,           // no leading parameter
     Plus,           // + without integer
@@ -8,5 +9,5 @@ pub enum LeadParam {
     Nint(usize),    // -ve integer
     Pindef,         // >
     Nindef,         // <
-    Marker(MarkId), // @ or = or %
+    Marker(MarkId), // @n or = or %
 }

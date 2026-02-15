@@ -1,537 +1,468 @@
+//! The main Frame type that combines a Rope with marks and handles virtual space.
+
+use std::fmt;
+
 use ropey::Rope;
-use std::collections::HashMap;
+
+use crate::cmd_result::{CmdFailure, CmdResult};
 use crate::lead_param::LeadParam;
-use crate::mark::{Mark, MarkId};
+use crate::marks::{MarkId, MarkSet};
+use crate::position::{line_length_excluding_newline, Position};
+use crate::trail_param::TrailParam;
 
-pub struct FrameId(String);
-
+/// An editable text frame with support for virtual space and marks.
+#[derive(Debug, Default)]
 pub struct Frame {
-    id: FrameId,
-    text: Rope,
-    dot: Mark,
-    marks: HashMap<MarkId, Option<Mark>>,
-    return_frame: Option<FrameId>,
+    /// The underlying rope data structure.
+    rope: Rope,
+    /// All marks (including dot) in this frame.
+    marks: MarkSet,
 }
 
-fn make_marks() ->  HashMap<MarkId, Option<Mark>> {
-    let mut marks = HashMap::new();
-    marks.insert(MarkId::Last, None);
-    marks.insert(MarkId::Modified, None);
-    for n in 1..=9u8 {
-        marks.insert(MarkId::Numbered(n), None);
+impl fmt::Display for Frame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.rope)
     }
-    marks
 }
 
 // Constructors
 impl Frame {
-    pub fn new(id: FrameId) -> Self {
-        Frame {
-            id,
-            text: Rope::new(),
-            dot: Mark::new(0),
-            marks: make_marks(),
-            return_frame: None,
+    /// Create a new empty frame.
+    pub fn new() -> Self {
+        Self {
+            rope: Rope::new(),
+            marks: MarkSet::new(),
         }
     }
 
-    pub fn new_with_text(id: FrameId, text: Rope) -> Self {
-        Frame {
-            id,
-            text,
-            dot: Mark::new(0),
-            marks: make_marks(),
-            return_frame: None,
+    pub fn from_str(s: &str) -> Self {
+        Self {
+            rope: Rope::from_str(s),
+            marks: MarkSet::new(),
         }
     }
 }
 
-// Commands
+// Editor commands
 impl Frame {
-
-    pub fn advance(&mut self, lead_param: LeadParam) -> bool {
-        let line = self.mark_line(&self.dot);
-        let new_position = match lead_param {
-            LeadParam::None | LeadParam::Plus => {
-                if line + 1 < self.text.len_lines() {
-                    self.text.line_to_char(line + 1)
-                } else {
-                    return false;
-                }
-            },
-            LeadParam::Minus => {
-                if line > 0 {
-                    self.text.line_to_char(line - 1)
-                } else {
-                    return false;
-                }
-            },
-            LeadParam::Pint(n) => {
-                if line + n < self.text.len_lines() {
-                    self.text.line_to_char(line + n)
-                } else {
-                    return false;
-                }
-            },
-            LeadParam::Nint(n) => {
-                if line >= n {
-                    self.text.line_to_char(line - n)
-                } else {
-                    return false;
-                }
-            },
-            LeadParam::Pindef => {
-                self.text.line_to_char(self.text.len_lines().saturating_sub(1))
-            }
-            LeadParam::Nindef => {
-                0
-            },
-            LeadParam::Marker(id) => {
-                if let Some(mark) = self.get_mark(&id) {
-                    self.mark_line(mark)
-                } else {
-                    return false;
-                }
-            }
-        };
-        self.set_mark(MarkId::Last, self.dot);
-        self.dot = Mark::new(new_position);
-        true
-    }
-
-    pub fn delete(&mut self, lead_param: LeadParam) -> bool {
-        return match lead_param {
-            LeadParam::None | LeadParam::Plus => self.delete_forward(1),
-            LeadParam::Pint(n) => self.delete_forward(n),
-            LeadParam::Pindef => self.delete_forward(usize::MAX),
-            LeadParam::Minus => self.delete_backward(1),
-            LeadParam::Nint(n) => self.delete_backward(n),
-            LeadParam::Nindef => self.delete_backward(usize::MAX),
-            LeadParam::Marker(id) => self.delete_to_mark(&id)
-        };
-    }
-
-    pub fn insert(&mut self, lead_param: LeadParam, text: &str) -> bool {
-        return match lead_param {
-            LeadParam::None | LeadParam::Plus => self.insert_text(1, text),
-            LeadParam::Pint(n) => self.insert_text(n, text),
-            _ => false
-        };
-    }
-
-    pub fn overwrite(&mut self, lead_param: LeadParam, text: &str) -> bool {
-        return match lead_param {
-            LeadParam::None | LeadParam::Plus => self.overwrite_text(1, text),
-            LeadParam::Pint(n) => self.overwrite_text(n, text),
-            _ => false
-        };
-    }
-
-    fn overwrite_text(&mut self, n: usize, text: &str) -> bool {
-        let overwrite_len = if let Some(pos) = text.chars().position(|c| c == '\n') {
-            pos
-        } else {
-            text.chars().count()
-        };
-        if overwrite_len == 0 {
-            return true;
+    pub fn cmd_advance(&mut self, lead_param: LeadParam) -> CmdResult {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.advance_fwd(1),
+            LeadParam::Pint(n) => self.advance_fwd(n),
+            LeadParam::Pindef => self.advance_end(),
+            LeadParam::Minus => self.advance_back(1),
+            LeadParam::Nint(n) => self.advance_back(n),
+            LeadParam::Nindef => self.advance_begin(),
+            LeadParam::Marker(id) => self.advance_to(self.mark_position(id)),
         }
-        if self.dot.vspace() > 0 {
-            // Realise virtual space first
-            self.realise_space(self.dot.position(), self.dot.vspace());
-            self.dot = Mark::new(self.dot.position() + self.dot.vspace());
-        }
-
-        let all_text = text[..overwrite_len].repeat(n);
-        let total_len = all_text.chars().count();
-
-        let line_length = self.line_length(&self.dot);
-        let dot_col = self.mark_column(&self.dot);
-        let actual_overwrite_len = total_len.min(line_length.saturating_sub(dot_col));
-        self.text.remove(self.dot.position()..self.dot.position() + actual_overwrite_len);
-        self.text.insert(self.dot.position(), text[..actual_overwrite_len].as_ref());
-        if actual_overwrite_len < total_len {
-            // Need to insert the rest
-            let insert_position = self.dot.position() + actual_overwrite_len;
-            let remaining_text = &all_text[actual_overwrite_len..];
-            self.text.insert(insert_position, remaining_text);
-            self.adjust_marks_after_insert(insert_position, total_len - actual_overwrite_len);
-        }
-        self.set_mark(MarkId::Last, self.dot);
-        self.dot = Mark::new(self.dot.position() + total_len);
-        self.set_mark(MarkId::Modified, self.dot);
-        true
     }
 
+    pub fn cmd_jump(&mut self, lead_param: LeadParam) -> CmdResult {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.jump_fwd(1),
+            LeadParam::Pint(n) => self.jump_fwd(n),
+            LeadParam::Pindef => self.jump_end(),
+            LeadParam::Minus => self.jump_back(1),
+            LeadParam::Nint(n) => self.jump_back(n),
+            LeadParam::Nindef => self.jump_begin(),
+            LeadParam::Marker(id) => self.jump_to(self.mark_position(id)),
+        }
+    }
+
+    pub fn cmd_delete_char(&mut self, lead_param: LeadParam) -> CmdResult {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.cmd_del_forward(1),
+            LeadParam::Pint(n) => self.cmd_del_forward(n),
+            LeadParam::Pindef => self.cmd_del_forward(line_length_excluding_newline(&self.rope, self.dot().line)),
+            LeadParam::Minus => self.cmd_del_backward(1),
+            LeadParam::Nint(n) => self.cmd_del_backward(n),
+            LeadParam::Nindef => self.cmd_del_backward(self.dot().column),
+            LeadParam::Marker(id) => self.cmd_del_to_mark(id)
+        }
+    }
+
+    pub fn cmd_insert_text(&mut self, lead_param: LeadParam, text: &TrailParam) -> CmdResult {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.cmd_ins_text(1, &text.str),
+            LeadParam::Pint(n) => self.cmd_ins_text(n, &text.str),
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
+    pub fn cmd_overtype_text(&mut self, lead_param: LeadParam, text: &TrailParam) -> CmdResult {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.cmd_ovr_text(1, &text.str),
+            LeadParam::Pint(n) => self.cmd_ovr_text(n, &text.str),
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
 }
 
-// Helper methods
+// Advance
 impl Frame {
-    fn set_mark(&mut self, mark_id: MarkId, value: Mark) {
-        self.marks.insert(mark_id, Some(value));
-    }
-
-    fn unset_mark(&mut self, mark_id: MarkId) {
-        self.marks.insert(mark_id, None);
-    }
-
-    fn get_mark(&self, mark_id: &MarkId) -> Option<&Mark> {
-        self.marks.get(mark_id).unwrap().as_ref()
-    }
-
-    fn delete_forward(&mut self, n: usize) -> bool {
-        if self.dot.vspace() > 0 {
-            // Deletion in virtual space is a no-op
-            return true;
+    fn advance_fwd(&mut self, count: usize) -> CmdResult {
+        let old_pos = self.dot();
+        let new_line = old_pos.line + count;
+        if new_line > self.lines() {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
         }
-        let dot_pos = self.dot.position();
-        let dot_line = self.text.char_to_line(dot_pos);
-        let dot_line_start = self.text.line_to_char(dot_line);
-        let dot_line_text = self.text.line(dot_line);
-        let dot_line_len = dot_line_text.len_chars();
+        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_dot(Position::new(new_line, 0));
+        CmdResult::Success
+    }
 
-        let to_delete = n.min(dot_line_len.saturating_sub(dot_pos - dot_line_start));
-        if to_delete > 0 {
-            self.text.remove(dot_pos..dot_pos + to_delete);
-            self.adjust_marks_after_delete(dot_pos, dot_pos + to_delete);
-            self.set_mark(MarkId::Modified, self.dot);
+    fn advance_back(&mut self, count: usize) -> CmdResult {
+        let old_pos = self.dot();
+        if old_pos.line < count {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
+        }
+        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_dot(Position::new(old_pos.line.saturating_sub(count), 0));
+        CmdResult::Success
+    }
+
+    fn advance_begin(&mut self) -> CmdResult {
+        self.set_mark_at(MarkId::Last, self.dot());
+        self.set_dot(Position::new(0, 0));
+        CmdResult::Success
+    }
+
+    fn advance_end(&mut self) -> CmdResult {
+        self.set_mark_at(MarkId::Last, self.dot());
+        self.set_dot(Position::new(self.lines(), 0));
+        CmdResult::Success
+    }
+
+    fn advance_to(&mut self, target: Option<Position>) -> CmdResult {
+        if let Some(pos) = target {
+            self.set_mark_at(MarkId::Last, self.dot());
+            self.set_dot(Position::new(pos.line, 0));
+            CmdResult::Success
+        } else {
+            CmdResult::Failure(CmdFailure::MarkNotDefined)
+        }
+    }
+}
+
+// Jump
+impl Frame {
+    fn jump_fwd(&mut self, count: usize) -> CmdResult {
+        let old_pos = self.dot();
+        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_dot(Position::new(old_pos.line, old_pos.column + count));
+        CmdResult::Success
+    }
+
+    fn jump_back(&mut self, count: usize) -> CmdResult {
+        let old_pos = self.dot();
+        if old_pos.column < count {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
+        }
+        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_dot(Position::new(old_pos.line, old_pos.column.saturating_sub(count)));
+        CmdResult::Success
+    }
+
+    fn jump_begin(&mut self) -> CmdResult {
+        let old_pos = self.dot();
+        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_dot(Position::new(old_pos.line, 0));
+        CmdResult::Success
+    }
+
+    fn jump_end(&mut self) -> CmdResult {
+        let old_pos = self.dot();
+        let line_len = line_length_excluding_newline(&self.rope, old_pos.line);
+        if line_len < old_pos.column {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
+        }
+        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_dot(Position::new(old_pos.line, line_len));
+        CmdResult::Success
+    }
+
+    fn jump_to(&mut self, target: Option<Position>) -> CmdResult {
+        if let Some(pos) = target {
+            self.set_mark_at(MarkId::Last, self.dot());
+            self.set_dot(pos);
+            CmdResult::Success
+        } else {
+            CmdResult::Failure(CmdFailure::MarkNotDefined)
+        }
+    }
+}
+
+// Delete
+impl Frame {
+    fn cmd_del_forward(&mut self, count: usize) -> CmdResult {
+        if self.delete_forward(count) {
+            self.set_mark(MarkId::Modified);
+        }
+        self.unset_mark(MarkId::Last);
+        CmdResult::Success
+    }
+
+    fn cmd_del_backward(&mut self, count: usize) -> CmdResult {
+        let start_position = self.dot();
+        if start_position.column < count {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
+        }
+        let final_dot = Position::new(start_position.line, start_position.column.saturating_sub(count));
+        if self.delete_backward(count) {
+            self.set_mark_at(MarkId::Modified, final_dot);
+        }
+        self.unset_mark(MarkId::Last);
+        self.set_mark_at(MarkId::Dot, final_dot);
+        CmdResult::Success
+    }
+
+    fn cmd_del_to_mark(&mut self, mark_id: MarkId) -> CmdResult {
+        if let Some(mark_pos) = self.mark_position(mark_id) {
+            if self.delete(self.dot(), mark_pos) {
+                self.set_mark(MarkId::Modified);
+            }
             self.unset_mark(MarkId::Last);
+            CmdResult::Success
+        } else {
+            CmdResult::Failure(CmdFailure::MarkNotDefined)
         }
+    }
+
+    /// Delete `count` characters forward from dot.
+    fn delete_forward(&mut self, count: usize) -> bool {
+        let from = self.dot();
+        let to = Position::new(from.line, from.column + count);
+        self.delete(from, to)
+    }
+
+    /// Delete `count` characters backward from dot.
+    fn delete_backward(&mut self, count: usize) -> bool {
+        let to = self.dot();
+        let from = Position::new(to.line, to.column.saturating_sub(count));
+        self.delete(from, to)
+    }
+
+    /// Delete text from `from` to `to` (exclusive).
+    ///
+    /// Positions are clamped to actual text (virtual space is ignored).
+    /// Updates all marks appropriately.
+    fn delete(&mut self, from: Position, to: Position) -> bool {
+        // Ensure from <= to
+        let (from, to) = if from <= to { (from, to) } else { (to, from) };
+
+        if from.clamp_to_text(&self.rope) == to.clamp_to_text(&self.rope) {
+            return false; // Nothing to delete
+        }
+
+        self.materialize_virtual_space(from);
+        let clamp_to = to.clamp_to_text(&self.rope);
+
+        let from_idx = from.to_char_index(&self.rope);
+        let to_idx = clamp_to.to_char_index(&self.rope);
+
+        // Delete from the rope
+        self.rope.remove(from_idx..to_idx);
+
+        // Update all marks
+        self.marks.update_after_delete(from, clamp_to);
         true
     }
+}
 
-    fn delete_backward(&mut self, n: usize) -> bool {
-        let col = self.mark_column(&self.dot);
-        if col < n {
-            return false;
+// Insert / Overwrite
+impl Frame {
+    fn cmd_ins_text(&mut self, count: usize, text: &str) -> CmdResult {
+        if count == 0 {
+            return CmdResult::Success;
         }
-        let mut to_delete = n;
-        if self.dot.vspace() > 0 {
-            let vspace_delete = n.min(self.dot.vspace());
-            self.dot = Mark::new_with_vspace(self.dot.position(), self.dot.vspace() - vspace_delete);
-            to_delete -= vspace_delete;
-        }
-        if to_delete > 0 {
-            // If we get here, vspace is zero
-            self.dot = Mark::new(self.dot.position().saturating_sub(to_delete));
-            return self.delete_forward(to_delete);
-        }
-        true
+        let last = self.dot();
+        self.insert(&text.repeat(count));
+        self.set_mark(MarkId::Modified);
+        self.set_mark_at(MarkId::Last, last);
+        CmdResult::Success
     }
 
-    fn mark_line(&self, mark: &Mark) -> usize {
-        let pos = mark.position();
-        self.text.char_to_line(pos)
-    }
-
-    fn line_length(&self, mark: &Mark) -> usize {
-        let line_text = self.text.line(self.mark_line(mark));
-        let total_chars = line_text.len_chars();
-        if line_text.chars().last() == Some('\n') {
-            total_chars - 1
-        } else {
-            total_chars
+    fn cmd_ovr_text(&mut self, count: usize, text: &str) -> CmdResult {
+        if count == 0 {
+            return CmdResult::Success;
         }
+        let last = self.dot();
+        self.overtype(&text.repeat(count));
+        self.set_mark(MarkId::Modified);
+        self.set_mark_at(MarkId::Last, last);
+        CmdResult::Success
     }
 
-    fn mark_column(&self, mark: &Mark) -> usize {
-        let pos = mark.position();
-        let line = self.text.char_to_line(pos);
-        let line_start = self.text.line_to_char(line);
-        pos - line_start + mark.vspace()
-    }
+    /// Materialize virtual space at a position by padding with spaces.
+    ///
+    /// If the position is not in virtual space, this is a no-op.
+    /// Returns the position (unchanged, since the virtual position is now real).
+    ///
+    /// Note: This does NOT update marks for the space padding, because the spaces
+    /// are being added to "catch up" to where marks already are in virtual space.
+    /// Marks in virtual space on this line are conceptually already past the line end,
+    /// so adding spaces to reach them doesn't change their logical position.
+    fn materialize_virtual_space(&mut self, pos: Position) {
+        let total_lines = self.rope.len_lines();
 
-    fn delete_to_mark(&mut self, mark_id: &MarkId) -> bool {
-        if let Some(target_mark) = self.get_mark(mark_id) {
-            if self.dot.position() == target_mark.position() {
-                // Nothing to do
-                return true;
+        // First, add lines if needed
+        if pos.line >= total_lines {
+            // Need to add newlines to reach the desired line
+            let lines_to_add = pos.line - total_lines + 1;
+
+            // Make sure the last line ends with a newline before adding more
+            let len = self.rope.len_chars();
+            if len > 0 {
+                let last_char = self.rope.char(len - 1);
+                if last_char != '\n' && last_char != '\r' {
+                    self.rope.insert_char(len, '\n');
+                }
             }
-            let (mut first, mut last) = if self.dot.position() <= target_mark.position() {
-                (self.dot.clone(), target_mark.clone())
-            } else {
-                (target_mark.clone(), self.dot.clone())
-            };
-            if first.vspace() > 0 {
-                let extra_space = first.vspace();
-                self.realise_space(first.position(), extra_space);
-                first = Mark::new(first.position() + extra_space);
-                last = Mark::new_with_vspace(last.position() + extra_space, last.vspace());
-            }
-            self.text.remove(first.position()..last.position());
-            self.dot = Mark::new(first.position());
-            self.adjust_marks_after_delete(first.position(), last.position());
-            self.set_mark(MarkId::Modified, self.dot);
-            self.unset_mark(MarkId::Last);
-            true
-        } else {
-            false
+
+            // Add the required newlines
+            self.rope.insert(self.rope.len_chars(), &"\n".repeat(lines_to_add));
+        }
+
+        // Now pad the line with spaces if needed
+        let line_len = line_length_excluding_newline(&self.rope, pos.line);
+        if pos.column > line_len {
+            let spaces_needed = pos.column - line_len;
+            let line_start = self.rope.line_to_char(pos.line);
+            let insert_pos = line_start + line_len;
+
+            self.rope.insert(insert_pos, &" ".repeat(spaces_needed));
         }
     }
 
-    fn insert_text(&mut self, n: usize, text: &str) -> bool {
+    /// Insert text at the current dot position.
+    ///
+    /// If dot is in virtual space, materializes the space first.
+    /// Updates all marks appropriately.
+    /// Dot ends up at the end of the inserted text.
+    fn insert(&mut self, text: &str) {
+        self.insert_at(self.dot(), text);
+    }
+
+    /// Insert text at a specific position.
+    ///
+    /// If the position is in virtual space, materializes the space first.
+    /// Updates all marks appropriately.
+    fn insert_at(&mut self, pos: Position, text: &str) {
         if text.is_empty() {
-            return true;
+            return;
         }
-        self.realise_space(self.dot.position(), self.dot.vspace());
-        let text_len = text.chars().count();
-        for _ in 0..n {
-            self.text.insert(self.dot.position(), text);
-        }
-        self.adjust_marks_after_insert(self.dot.position(), text_len * n);
-        self.set_mark(MarkId::Last, self.dot);
-        self.dot = Mark::new(self.dot.position() + text_len * n);
-        self.set_mark(MarkId::Modified, self.dot);
-        true
+
+        // Materialize virtual space if needed
+        self.materialize_virtual_space(pos);
+
+        // Calculate the char index for insertion
+        let char_idx = pos.to_char_index(&self.rope);
+
+        // Insert the text
+        self.rope.insert(char_idx, text);
+
+        // Calculate how the insertion affects positions
+        let (lines_added, end_column) = calculate_insert_effect(text);
+
+        // Update all marks
+        self.marks.update_after_insert(pos, lines_added, end_column);
     }
 
-    fn realise_space(&mut self, position: usize, vspace: usize) {
-        if vspace > 0 {
-            let spaces = " ".repeat(vspace);
-            self.text.insert(position, &spaces);
-            self.adjust_marks_after_insert(position, position + vspace);
+    /// Overtype (replace) text at the current dot position.
+    ///
+    /// This replaces existing characters with the new text.
+    /// If dot is in virtual space, materializes the space first.
+    /// If the text extends beyond the line, the extra characters are inserted.
+    fn overtype(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
         }
+
+        let pos = self.dot();
+
+        // Materialize virtual space if needed
+        self.materialize_virtual_space(pos);
+
+        // Figure out how many characters we can replace on this line
+        let line_len = line_length_excluding_newline(&self.rope, pos.line);
+        let chars_after_cursor = line_len.saturating_sub(pos.column);
+
+        // Count chars in text (handling multi-line text)
+        let first_line_chars = line_length_excluding_newline(&Rope::from_str(text), 0);
+        let chars_to_replace = first_line_chars.min(chars_after_cursor);
+
+        let (pos, to_insert) = if chars_to_replace > 0 {
+            let overwrite_position = pos.to_char_index(&self.rope);
+            self.rope.remove(overwrite_position..(overwrite_position + chars_to_replace));
+            self.rope.insert(overwrite_position, &text[..chars_to_replace]);
+            // Dot moves to the end of the overwritten part
+            let new_dot = Position::new(pos.line, pos.column + chars_to_replace);
+            self.set_dot(new_dot);
+            (new_dot, &text[chars_to_replace..])
+        } else {
+            (pos, text)
+        };
+
+        // Now insert the text
+        self.insert_at(pos, to_insert);
+    }
+}
+
+// Miscellaneous methods
+impl Frame {
+    pub fn dot(&self) -> Position {
+        self.marks.dot()
     }
 
-    fn adjust_marks_after_delete(&mut self, del_start: usize, del_end: usize) {
-        let deleted_len = del_end - del_start;
-        for mark_opt in self.marks.values_mut() {
-            if let Some(mark) = mark_opt {
-                let mark_pos = mark.position();
-                if mark_pos >= del_end {
-                    // Mark is after the cut. Shift it left.
-                    let new_position = mark_pos - deleted_len;
-
-                    // Adjust virtual space if necessary.
-                    // If we deleted a newline, then vspace must be zero.
-                    let mut new_vspace = mark.vspace();
-                    if mark.vspace() > 0 {
-                        if self.text.char(mark_pos) != '\n' {
-                            // The void is no longer at a line ending.
-                            // Collapse the virtual offset.
-                            new_vspace = 0;
-                        }
-                    }
-                    *mark_opt = Some(Mark::new_with_vspace(new_position, new_vspace));
-                } else if mark_pos > del_start {
-                    // Mark was inside the cut.
-                    // Collapse it to the start of the cut.
-                    *mark_opt = Some(Mark::new_with_vspace(del_start, 0));
-                }
-            }
-        }
+    pub fn set_dot(&mut self, position: Position) {
+        let use_line = position.line.min(self.rope.len_lines().saturating_sub(1));
+        self.marks.set_dot(Position::new(use_line, position.column));
     }
 
-    fn adjust_marks_after_insert(&mut self, ins_start: usize, ins_len: usize) {
-        for mark_opt in self.marks.values_mut() {
-            if let Some(mark) = mark_opt {
-                if mark.position() >= ins_start {
-                    // Mark is at or after the insertion point.
-                    // Mark shifts right by the length of the new text.
-                    let new_mark = Mark::new_with_vspace(mark.position() + ins_len, mark.vspace());
-                    *mark_opt = Some(new_mark);
-                }
-            }
+    /// Create a new mark at the current dot position.
+    fn set_mark(&mut self, id: MarkId) {
+        self.marks.set(id, self.dot())
+    }
+
+    /// Create a new mark at a specific position.
+    fn set_mark_at(&mut self, id: MarkId, pos: Position) {
+        self.marks.set(id, pos)
+    }
+
+    /// Unset a mark.
+    fn unset_mark(&mut self, id: MarkId) {
+        self.marks.unset(id);
+    }
+
+    /// Get the position of a mark.
+    fn mark_position(&self, id: MarkId) -> Option<Position> {
+        self.marks.get(id)
+    }
+
+    fn lines(&self) -> usize {
+        if self.rope.len_chars() == 0 {
+            return 0;
+        }
+        let lines = self.rope.len_lines().saturating_sub(1);
+        if line_length_excluding_newline(&self.rope, lines) > 0 {
+            lines + 1
+        } else {
+            lines
         }
     }
+}
+
+/// Calculate the effect of inserting text: (lines_added, end_column)
+///
+/// Uses Rope to handle multi-line text correctly.
+fn calculate_insert_effect(text: &str) -> (usize, usize) {
+    if text.is_empty() {
+        return (0, 0);
+    }
+    let r = Rope::from_str(text);
+    let lines = r.len_lines();
+    (lines - 1, line_length_excluding_newline(&r, lines - 1))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ropey::Rope;
-
-    const M1 : MarkId = MarkId::Numbered(1);
-    const M2 : MarkId = MarkId::Numbered(2);
-    const M3 : MarkId = MarkId::Numbered(3);
-    const M4 : MarkId = MarkId::Numbered(4);
-
-    #[test]
-    fn delete_forward_updates_marks_and_text() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello world!"));
-        f.dot = Mark::new(5);
-        f.marks.insert(M1, Some(Mark::new(3)));  // Mark won't move
-        f.marks.insert(M2, Some(Mark::new(5)));  // Mark won't move (at dot)
-        f.marks.insert(M3, Some(Mark::new(7)));  // Mark is in deleted region— moves to dot
-        f.marks.insert(M4, Some(Mark::new(12))); // Mark shifts back by 6
-        f.delete(LeadParam::Pint(6));
-        assert_eq!(f.text.to_string(), "hello!");
-        assert_eq!(f.dot.position(), 5);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&MarkId::Last).unwrap(), &None);
-        assert_eq!(f.marks.get(&M1).unwrap().unwrap().position(), 3);
-        assert_eq!(f.marks.get(&M2).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&M3).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&M4).unwrap().unwrap().position(), 6);
-    }
-
-    #[test]
-    fn delete_backward_updates_marks_and_text() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello world!"));
-        f.dot = Mark::new(11);
-        f.marks.insert(M1, Some(Mark::new(3)));  // Mark won't move
-        f.marks.insert(M2, Some(Mark::new(5)));  // Mark won't move
-        f.marks.insert(M3, Some(Mark::new(7)));  // Mark is in deleted region
-        f.marks.insert(M4, Some(Mark::new(12))); // Mark shifts back by 6
-        f.delete(LeadParam::Nint(6));
-        assert_eq!(f.text.to_string(), "hello!");
-        assert_eq!(f.dot.position(), 5);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&MarkId::Last).unwrap(), &None);
-        assert_eq!(f.marks.get(&M1).unwrap().unwrap().position(), 3);
-        assert_eq!(f.marks.get(&M2).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&M3).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&M4).unwrap().unwrap().position(), 6);
-    }
-
-    #[test]
-    fn delete_forward_past_end_of_line_noop() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello"));
-        f.dot = Mark::new(5);
-        let result = f.delete(LeadParam::Plus);
-        assert!(result);
-        assert_eq!(f.text.to_string(), "hello");
-        assert_eq!(f.dot.position(), 5);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap(), &None);
-    }
-
-    #[test]
-    fn delete_backward_past_beginning_of_line_fails() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello"));
-        f.dot = Mark::new(0);
-        let result = f.delete(LeadParam::Minus);
-        assert!(!result);
-        assert_eq!(f.text.to_string(), "hello");
-        assert_eq!(f.dot.position(), 0);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap(), &None);
-    }
-
-    #[test]
-    fn delete_backward_in_virtual_space() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello"));
-        f.dot = Mark::new_with_vspace(5, 3);
-        let result = f.delete(LeadParam::Nint(2));
-        assert!(result);
-        assert_eq!(f.text.to_string(), "hello");
-        assert_eq!(f.dot.position(), 5);
-        assert_eq!(f.dot.vspace(), 1);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap(), &None);
-    }
-
-    #[test]
-    fn delete_backward_in_virtual_space_plus_text() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello"));
-        f.dot = Mark::new_with_vspace(5, 3);
-        let result = f.delete(LeadParam::Nint(5));
-        assert!(result);
-        assert_eq!(f.text.to_string(), "hel");
-        assert_eq!(f.dot.position(), 3);
-        assert_eq!(f.dot.vspace(), 0);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap(), Mark::new(3));
-    }
-
-    #[test]
-    fn delete_to_mark() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello\n world!"));
-        f.dot = Mark::new_with_vspace(5, 0);
-        f.set_mark(MarkId::Numbered(1), Mark::new(6));
-        let result = f.delete(LeadParam::Marker(MarkId::Numbered(1)));
-        assert!(result);
-        assert_eq!(f.text.to_string(), "hello world!");
-        assert_eq!(f.dot.position(), 5);
-        assert_eq!(f.dot.vspace(), 0);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap(), Mark::new(5));
-    }
-
-    #[test]
-    fn delete_to_mark_vspace() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello\n world!"));
-        f.dot = Mark::new_with_vspace(5, 3);
-        f.set_mark(MarkId::Numbered(1), Mark::new(6));
-        let result = f.delete(LeadParam::Marker(MarkId::Numbered(1)));
-        assert!(result);
-        assert_eq!(f.text.to_string(), "hello    world!");
-        assert_eq!(f.dot.position(), 8);
-        assert_eq!(f.dot.vspace(), 0);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap(), Mark::new(8));
-    }
-
-    #[test]
-    fn insert_text_at_end_updates_marks_and_text() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello"));
-        f.dot = Mark::new(5);
-        f.set_mark(MarkId::Numbered(1), Mark::new(5));
-        f.set_mark(MarkId::Numbered(2), Mark::new(4));
-        f.insert(LeadParam::None, " world");
-        assert_eq!(f.text.to_string(), "hello world");
-        assert_eq!(f.dot.position(), 11);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap().position(), 11);
-        assert_eq!(f.marks.get(&MarkId::Last).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&MarkId::Numbered(1)).unwrap().unwrap().position(), 11);
-        assert_eq!(f.marks.get(&MarkId::Numbered(2)).unwrap().unwrap().position(), 4);
-    }
-
-    #[test]
-    fn insert_text_in_middle_updates_marks_and_text() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("helloworld"));
-        f.dot = Mark::new(5);
-        f.set_mark(MarkId::Numbered(1), Mark::new(5));
-        f.set_mark(MarkId::Numbered(2), Mark::new(4));
-        f.insert(LeadParam::None, " ");
-        assert_eq!(f.text.to_string(), "hello world");
-        assert_eq!(f.dot.position(), 6);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap().position(), 6);
-        assert_eq!(f.marks.get(&MarkId::Last).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&MarkId::Numbered(1)).unwrap().unwrap().position(), 6);
-        assert_eq!(f.marks.get(&MarkId::Numbered(2)).unwrap().unwrap().position(), 4);
-    }
-
-    #[test]
-    fn overwrite_text_updates_marks_and_text_when_inserting() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello world\nline 2"));
-        f.dot = Mark::new(6);
-        f.set_mark(MarkId::Numbered(1), Mark::new(5));
-        f.set_mark(MarkId::Numbered(2), Mark::new(6));
-        f.set_mark(MarkId::Numbered(3), Mark::new(7));
-        f.set_mark(MarkId::Numbered(4), Mark::new(12));
-        f.overwrite(LeadParam::None, "universe");
-        assert_eq!(f.text.to_string(), "hello universe\nline 2");
-        assert_eq!(f.dot.position(), 14);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap().position(), 14);
-        assert_eq!(f.marks.get(&MarkId::Last).unwrap().unwrap().position(), 6);
-        assert_eq!(f.marks.get(&MarkId::Numbered(1)).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&MarkId::Numbered(2)).unwrap().unwrap().position(), 6);
-        assert_eq!(f.marks.get(&MarkId::Numbered(3)).unwrap().unwrap().position(), 7);
-        assert_eq!(f.marks.get(&MarkId::Numbered(4)).unwrap().unwrap().position(), 15);
-    }
-
-    #[test]
-    fn overwrite_text_updates_marks_and_text_when_overwriting() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("hello universe\nline 2"));
-        f.dot = Mark::new(6);
-        f.set_mark(MarkId::Numbered(1), Mark::new(5));
-        f.set_mark(MarkId::Numbered(2), Mark::new(6));
-        f.set_mark(MarkId::Numbered(3), Mark::new(7));
-        f.set_mark(MarkId::Numbered(4), Mark::new(12));
-        f.overwrite(LeadParam::None, "world!!!");
-        assert_eq!(f.text.to_string(), "hello world!!!\nline 2");
-        assert_eq!(f.dot.position(), 14);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap().position(), 14);
-        assert_eq!(f.marks.get(&MarkId::Last).unwrap().unwrap().position(), 6);
-        assert_eq!(f.marks.get(&MarkId::Numbered(1)).unwrap().unwrap().position(), 5);
-        assert_eq!(f.marks.get(&MarkId::Numbered(2)).unwrap().unwrap().position(), 6);
-        assert_eq!(f.marks.get(&MarkId::Numbered(3)).unwrap().unwrap().position(), 7);
-        assert_eq!(f.marks.get(&MarkId::Numbered(4)).unwrap().unwrap().position(), 12);
-    }
-
-    #[test]
-    fn overwrite_text_extends_line() {
-        let mut f = Frame::new_with_text(FrameId("frame".into()), Rope::from_str("\nline 2"));
-        f.dot = Mark::new_with_vspace(0, 5);
-        f.overwrite(LeadParam::Pint(3), "0123456789");
-        assert_eq!(f.text.to_string(), "     012345678901234567890123456789\nline 2");
-        assert_eq!(f.dot.position(), 35);
-        assert_eq!(f.marks.get(&MarkId::Modified).unwrap().unwrap().position(), 35);
-        assert_eq!(f.marks.get(&MarkId::Last).unwrap().unwrap().position(), 5);
-    }
-}
+mod tests;
