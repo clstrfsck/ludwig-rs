@@ -89,6 +89,16 @@ impl Frame {
         }
     }
 
+    pub fn cmd_insert_line(&mut self, lead_param: LeadParam) -> CmdResult {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.insert_lines(1, false),
+            LeadParam::Pint(n) => self.insert_lines(n, false),
+            LeadParam::Minus => self.insert_lines(1, true),
+            LeadParam::Nint(n) => self.insert_lines(n, true),
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
     pub fn cmd_insert_char(&mut self, lead_param: LeadParam) -> CmdResult {
         match lead_param {
             LeadParam::None | LeadParam::Plus => self.insert_chars(1, false),
@@ -281,6 +291,23 @@ impl Frame {
 
 // Insert / Overwrite
 impl Frame {
+    fn insert_lines(&mut self, count: usize, move_dot: bool) -> CmdResult {
+        if count == 0 {
+            return CmdResult::Success;
+        }
+        let original_dot = self.dot();
+        let insert_pos = Position::new(original_dot.line, 0);
+        self.insert_at(insert_pos, &"\n".repeat(count));
+        self.set_mark(MarkId::Modified);
+        self.set_mark_at(MarkId::Last, original_dot);
+        if !move_dot {
+            // After insert_at, dot has been shifted down by count lines.
+            // Reset it to the original position (now an empty inserted line).
+            self.set_dot(Position::new(original_dot.line, original_dot.column));
+        }
+        CmdResult::Success
+    }
+
     fn insert_chars(&mut self, count: usize, move_dot: bool) -> CmdResult {
         if count == 0 {
             return CmdResult::Success;

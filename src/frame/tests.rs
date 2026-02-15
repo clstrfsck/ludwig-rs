@@ -138,6 +138,104 @@ fn test_marks_update_on_delete() {
     assert_eq!(frame.to_string(), "hello world");
 }
 
+// Insert Line (L command)
+
+#[test]
+fn insert_line_default_inserts_one_line() {
+    let mut f = Frame::from_str("hello\nworld");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "\nhello\nworld");
+    // Positive: dot moves to topmost inserted line, same column
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+#[test]
+fn insert_line_positive_n() {
+    let mut f = Frame::from_str("hello\nworld");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_line(LeadParam::Pint(3));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "\n\n\nhello\nworld");
+    // Dot on the topmost inserted line, same column (virtual space)
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+#[test]
+fn insert_line_negative_inserts_one_line_dot_stays() {
+    let mut f = Frame::from_str("hello\nworld");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_line(LeadParam::Minus);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "\nhello\nworld");
+    // Negative: dot stays on original character (shifted down by 1)
+    assert_eq!(f.dot(), Position::new(1, 3));
+}
+
+#[test]
+fn insert_line_negative_n() {
+    let mut f = Frame::from_str("hello\nworld");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_line(LeadParam::Nint(3));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "\n\n\nhello\nworld");
+    // Negative: dot stays on original character (shifted down by 3)
+    assert_eq!(f.dot(), Position::new(3, 3));
+}
+
+#[test]
+fn insert_line_zero_is_noop() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_insert_line(LeadParam::Pint(0));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello");
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+#[test]
+fn insert_line_on_second_line() {
+    let mut f = Frame::from_str("hello\nworld\nfoo");
+    f.set_dot(Position::new(1, 2));
+    let result = f.cmd_insert_line(LeadParam::Pint(2));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello\n\n\nworld\nfoo");
+    // Dot on the topmost inserted line (line 1), same column
+    assert_eq!(f.dot(), Position::new(1, 2));
+}
+
+#[test]
+fn insert_line_sets_marks() {
+    let mut f = Frame::from_str("hello\nworld");
+    f.set_dot(Position::new(1, 3));
+    f.cmd_insert_line(LeadParam::Pint(2));
+    // Last set to original dot position
+    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(1, 3));
+    // Modified set after insert (dot was shifted to line 3 before reset)
+    assert!(f.marks.get(MarkId::Modified).is_some());
+}
+
+#[test]
+fn insert_line_shifts_marks_below() {
+    let mut f = Frame::from_str("hello\nworld\nfoo");
+    f.set_dot(Position::new(1, 0));
+    f.marks.set(MarkId::Numbered(1), Position::new(0, 3)); // above: unchanged
+    f.marks.set(MarkId::Numbered(2), Position::new(1, 2)); // at insert line: shifts down
+    f.marks.set(MarkId::Numbered(3), Position::new(2, 1)); // below: shifts down
+    f.cmd_insert_line(LeadParam::Pint(2));
+    assert_eq!(f.marks.get(MarkId::Numbered(1)).unwrap(), Position::new(0, 3));
+    assert_eq!(f.marks.get(MarkId::Numbered(2)).unwrap(), Position::new(3, 2));
+    assert_eq!(f.marks.get(MarkId::Numbered(3)).unwrap(), Position::new(4, 1));
+}
+
+#[test]
+fn insert_line_rejects_invalid_lead_param() {
+    let mut f = Frame::from_str("hello");
+    let result = f.cmd_insert_line(LeadParam::Pindef);
+    assert!(result.is_failure());
+}
+
 // Insert Char (C command)
 
 #[test]
