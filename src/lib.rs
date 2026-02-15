@@ -3,7 +3,7 @@
 //! # Example
 //!
 //! ```rust
-//! use ludwig::{Frame, LeadParam, Position, TrailParam};
+//! use ludwig::{EditCommands, Frame, LeadParam, MotionCommands, Position, TrailParam};
 //!
 //! let mut frame: Frame = Frame::from_str("hello world");
 //!
@@ -23,19 +23,21 @@
 //! ```
 
 mod cmd_result;
+pub mod code;
+pub mod compiler;
 mod editor;
 mod frame;
 mod lead_param;
 mod marks;
-mod parse_cmd;
 mod position;
 mod trail_param;
 
 pub use cmd_result::{CmdFailure, CmdResult};
+pub use code::{CompiledCode, ExecOutcome};
+pub use compiler::compile;
 pub use editor::Editor;
-pub use frame::Frame;
+pub use frame::{EditCommands, Frame, MotionCommands};
 pub use lead_param::LeadParam;
 pub use marks::{MarkId, MarkSet};
-pub use parse_cmd::{ExecuteCommand, parse_commands};
-pub use position::{line_length_excluding_newline, Position};
+pub use position::{Position, line_length_excluding_newline};
 pub use trail_param::TrailParam;

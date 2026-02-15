@@ -9,6 +9,7 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0.101"
 clap = { version = "4.5.58", features = ["derive"] }
+itertools = "0.14.0"
 ropey = { version = "1.6", default-features = false, features = ["cr_lines", "simd"] }
 
 [dev-dependencies]

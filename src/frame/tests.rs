@@ -1,5 +1,7 @@
 use super::*;
-
+use crate::lead_param::LeadParam;
+use crate::marks::MarkId;
+use crate::trail_param::TrailParam;
 
 #[test]
 fn test_calculate_insert_effect() {
@@ -224,9 +226,18 @@ fn insert_line_shifts_marks_below() {
     f.marks.set(MarkId::Numbered(2), Position::new(1, 2)); // at insert line: shifts down
     f.marks.set(MarkId::Numbered(3), Position::new(2, 1)); // below: shifts down
     f.cmd_insert_line(LeadParam::Pint(2));
-    assert_eq!(f.marks.get(MarkId::Numbered(1)).unwrap(), Position::new(0, 3));
-    assert_eq!(f.marks.get(MarkId::Numbered(2)).unwrap(), Position::new(3, 2));
-    assert_eq!(f.marks.get(MarkId::Numbered(3)).unwrap(), Position::new(4, 1));
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(1)).unwrap(),
+        Position::new(0, 3)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(2)).unwrap(),
+        Position::new(3, 2)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(3)).unwrap(),
+        Position::new(4, 1)
+    );
 }
 
 #[test]
@@ -306,14 +317,20 @@ fn insert_char_sets_marks() {
 fn insert_char_updates_marks_after_insertion() {
     let mut f = Frame::from_str("hello world");
     f.set_dot(Position::new(0, 5));
-    f.marks.set(MarkId::Numbered(1), Position::new(0, 3));  // before insert point
-    f.marks.set(MarkId::Numbered(2), Position::new(0, 8));  // after insert point
+    f.marks.set(MarkId::Numbered(1), Position::new(0, 3)); // before insert point
+    f.marks.set(MarkId::Numbered(2), Position::new(0, 8)); // after insert point
     f.cmd_insert_char(LeadParam::Pint(3));
     assert_eq!(f.to_string(), "hello    world");
     // Mark before insert point: unchanged
-    assert_eq!(f.marks.get(MarkId::Numbered(1)).unwrap(), Position::new(0, 3));
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(1)).unwrap(),
+        Position::new(0, 3)
+    );
     // Mark after insert point: shifted right by 3
-    assert_eq!(f.marks.get(MarkId::Numbered(2)).unwrap(), Position::new(0, 11));
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(2)).unwrap(),
+        Position::new(0, 11)
+    );
 }
 
 #[test]
@@ -466,8 +483,14 @@ fn insert_text_at_end_updates_marks_and_text() {
     assert_eq!(f.marks.get(MarkId::Dot).unwrap(), Position::new(0, 11));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 11));
     assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 5));
-    assert_eq!(f.marks.get(MarkId::Numbered(1)).unwrap(), Position::new(0, 11));
-    assert_eq!(f.marks.get(MarkId::Numbered(2)).unwrap(), Position::new(0, 4));
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(1)).unwrap(),
+        Position::new(0, 11)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(2)).unwrap(),
+        Position::new(0, 4)
+    );
 }
 
 #[test]
@@ -481,8 +504,14 @@ fn insert_text_in_middle_updates_marks_and_text() {
     assert_eq!(f.marks.get(MarkId::Dot).unwrap(), Position::new(0, 6));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 6));
     assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 5));
-    assert_eq!(f.marks.get(MarkId::Numbered(1)).unwrap(), Position::new(0, 6));
-    assert_eq!(f.marks.get(MarkId::Numbered(2)).unwrap(), Position::new(0, 4));
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(1)).unwrap(),
+        Position::new(0, 6)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(2)).unwrap(),
+        Position::new(0, 4)
+    );
 }
 
 #[test]
@@ -498,10 +527,22 @@ fn overwrite_text_updates_marks_and_text_when_inserting() {
     assert_eq!(f.marks.get(MarkId::Dot).unwrap(), Position::new(0, 14));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 14));
     assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 6));
-    assert_eq!(f.marks.get(MarkId::Numbered(1)).unwrap(), Position::new(0, 5));
-    assert_eq!(f.marks.get(MarkId::Numbered(2)).unwrap(), Position::new(0, 6));
-    assert_eq!(f.marks.get(MarkId::Numbered(3)).unwrap(), Position::new(0, 7));
-    assert_eq!(f.marks.get(MarkId::Numbered(4)).unwrap(), Position::new(1, 0));
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(1)).unwrap(),
+        Position::new(0, 5)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(2)).unwrap(),
+        Position::new(0, 6)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(3)).unwrap(),
+        Position::new(0, 7)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(4)).unwrap(),
+        Position::new(1, 0)
+    );
 }
 
 #[test]
@@ -517,10 +558,22 @@ fn overwrite_text_updates_marks_and_text_when_overwriting() {
     assert_eq!(f.dot(), Position::new(0, 14));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 14));
     assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 6));
-    assert_eq!(f.marks.get(MarkId::Numbered(1)).unwrap(), Position::new(0, 5));
-    assert_eq!(f.marks.get(MarkId::Numbered(2)).unwrap(), Position::new(0, 6));
-    assert_eq!(f.marks.get(MarkId::Numbered(3)).unwrap(), Position::new(0, 7));
-    assert_eq!(f.marks.get(MarkId::Numbered(4)).unwrap(), Position::new(0, 12));
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(1)).unwrap(),
+        Position::new(0, 5)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(2)).unwrap(),
+        Position::new(0, 6)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(3)).unwrap(),
+        Position::new(0, 7)
+    );
+    assert_eq!(
+        f.marks.get(MarkId::Numbered(4)).unwrap(),
+        Position::new(0, 12)
+    );
 }
 
 #[test]
@@ -528,7 +581,10 @@ fn overwrite_text_extends_line() {
     let mut f = Frame::from_str("\nline 2");
     f.marks.set(MarkId::Dot, Position::new(0, 5));
     f.cmd_overtype_text(LeadParam::Pint(3), &TrailParam::from_str("0123456789"));
-    assert_eq!(f.rope.to_string(), "     012345678901234567890123456789\nline 2");
+    assert_eq!(
+        f.rope.to_string(),
+        "     012345678901234567890123456789\nline 2"
+    );
     assert_eq!(f.dot(), Position::new(0, 35));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 35));
     assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 5));

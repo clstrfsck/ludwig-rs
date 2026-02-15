@@ -1,5 +1,4 @@
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TrailParam {
     pub dlm: char,
     pub str: String,

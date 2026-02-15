@@ -196,7 +196,8 @@ mod tests {
 
     #[test]
     fn test_unicode_newline_not_supported() {
-        const UNICODE_LINE_BREAKS: &[char] = &['\u{000B}', '\u{000C}', '\u{0085}', '\u{2028}', '\u{2029}'];
+        const UNICODE_LINE_BREAKS: &[char] =
+            &['\u{000B}', '\u{000C}', '\u{0085}', '\u{2028}', '\u{2029}'];
         for &ch in UNICODE_LINE_BREAKS {
             let rope = Rope::from_str(&format!("line1{}line2", ch));
             assert_eq!(line_length_excluding_newline(&rope, 0), 11);

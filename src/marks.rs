@@ -34,9 +34,7 @@ impl MarkSet {
     pub fn new() -> Self {
         let mut marks = HashMap::new();
         marks.insert(MarkId::Dot, Position::zero());
-        Self {
-            marks,
-        }
+        Self { marks }
     }
 
     /// Get a mark by ID.
@@ -46,10 +44,10 @@ impl MarkSet {
 
     /// Set the position of a mark.
     pub fn set(&mut self, id: MarkId, position: Position) {
-        if let MarkId::Numbered(n) = id {
-            if !NUMBERED_MARK_RANGE.contains(&n) {
-                return;
-            }
+        if let MarkId::Numbered(n) = id
+            && !NUMBERED_MARK_RANGE.contains(&n)
+        {
+            return;
         }
         self.marks.insert(id, position);
     }
@@ -76,12 +74,7 @@ impl MarkSet {
     /// - `at`: The position where text was inserted
     /// - `lines_added`: Number of complete lines added (from newlines in inserted text)
     /// - `end_column`: The column position after the insertion on the final line
-    pub fn update_after_insert(
-        &mut self,
-        at: Position,
-        lines_added: usize,
-        end_column: usize,
-    ) {
+    pub fn update_after_insert(&mut self, at: Position, lines_added: usize, end_column: usize) {
         for pos in self.marks.values_mut() {
             // Marks before the insertion point don't move
             if pos.line < at.line || (pos.line == at.line && pos.column < at.column) {

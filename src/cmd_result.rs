@@ -8,6 +8,8 @@ pub enum CmdResult {
 /// The reason a command failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CmdFailure {
+    /// Not implemeneted yet, or doesn't exist
+    NotImplemented,
     /// Movement or deletion past frame boundaries.
     OutOfRange,
     /// A mark referenced by the command is not set.
