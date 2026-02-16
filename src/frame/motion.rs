@@ -14,6 +14,18 @@ pub trait MotionCommands {
 
     /// Jump command - move within the current line.
     fn cmd_jump(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Cursor left command (ZL).
+    fn cmd_left(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Cursor right command (ZR).
+    fn cmd_right(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Cursor up command (ZU).
+    fn cmd_up(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Cursor down command (ZD).
+    fn cmd_down(&mut self, lead_param: LeadParam) -> CmdResult;
 }
 
 impl MotionCommands for Frame {
@@ -40,6 +52,119 @@ impl MotionCommands for Frame {
             LeadParam::Marker(id) => self.jump_to(self.mark_position(id)),
         }
     }
+
+    fn cmd_left(&mut self, lead_param: LeadParam) -> CmdResult {
+        let dot = self.dot();
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => {
+                if dot.column < 1 {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line, dot.column - 1));
+                CmdResult::Success
+            }
+            LeadParam::Pint(n) => {
+                if dot.column < n {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line, dot.column - n));
+                CmdResult::Success
+            }
+            LeadParam::Pindef => {
+                // Go to column 0 (left margin)
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line, 0));
+                CmdResult::Success
+            }
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
+    fn cmd_right(&mut self, lead_param: LeadParam) -> CmdResult {
+        let dot = self.dot();
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => {
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line, dot.column + 1));
+                CmdResult::Success
+            }
+            LeadParam::Pint(n) => {
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line, dot.column + n));
+                CmdResult::Success
+            }
+            LeadParam::Pindef => {
+                // Go to end of line (right margin)
+                let line_len = line_length_excluding_newline(&self.rope, dot.line);
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line, line_len));
+                CmdResult::Success
+            }
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
+    fn cmd_up(&mut self, lead_param: LeadParam) -> CmdResult {
+        let dot = self.dot();
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => {
+                if dot.line < 1 {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line - 1, dot.column));
+                CmdResult::Success
+            }
+            LeadParam::Pint(n) => {
+                if dot.line < n {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line - n, dot.column));
+                CmdResult::Success
+            }
+            LeadParam::Pindef => {
+                // Go to first line, preserving column
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(0, dot.column));
+                CmdResult::Success
+            }
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
+    fn cmd_down(&mut self, lead_param: LeadParam) -> CmdResult {
+        let dot = self.dot();
+        let num_lines = self.lines();
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => {
+                if dot.line + 1 >= num_lines {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line + 1, dot.column));
+                CmdResult::Success
+            }
+            LeadParam::Pint(n) => {
+                if dot.line + n >= num_lines {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(dot.line + n, dot.column));
+                CmdResult::Success
+            }
+            LeadParam::Pindef => {
+                // Go to last line, preserving column
+                let last_line = if num_lines > 0 { num_lines - 1 } else { 0 };
+                self.set_mark_at(MarkId::Equals, dot);
+                self.set_dot(Position::new(last_line, dot.column));
+                CmdResult::Success
+            }
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
 }
 
 // Private implementation helpers for Advance
@@ -47,7 +172,8 @@ impl Frame {
     fn advance_fwd(&mut self, count: usize) -> CmdResult {
         let old_pos = self.dot();
         let new_line = old_pos.line + count;
-        if new_line >= self.lines() {
+        // Can't advance to last blank line
+        if new_line + 1 >= self.lines() {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
         self.set_mark_at(MarkId::Last, old_pos);

@@ -417,6 +417,26 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
         tpar_count: 0
     },
+    "zd" => CmdInfo {
+        op: CmdOp::Down,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "zl" => CmdInfo {
+        op: CmdOp::Left,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "zr" => CmdInfo {
+        op: CmdOp::Right,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "zu" => CmdInfo {
+        op: CmdOp::Up,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
     "*e" => CmdInfo {
         op: CmdOp::CaseEdit,
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),

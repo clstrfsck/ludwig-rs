@@ -167,6 +167,10 @@ fn dispatch_cmd(
         CmdOp::CaseEdit => frame.cmd_case_change(lead, CaseMode::Edit),
         CmdOp::Next => frame.cmd_next(lead, tpar.unwrap()),
         CmdOp::Bridge => frame.cmd_bridge(lead, tpar.unwrap()),
+        CmdOp::Left => frame.cmd_left(lead),
+        CmdOp::Right => frame.cmd_right(lead),
+        CmdOp::Up => frame.cmd_up(lead),
+        CmdOp::Down => frame.cmd_down(lead),
         // FIXME: remove this when everything is implemented
         _ => CmdResult::Failure(CmdFailure::NotImplemented),
     }

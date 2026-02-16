@@ -5,6 +5,7 @@
 //! ```rust
 //! use ludwig::{EditCommands, Frame, LeadParam, MotionCommands, Position, TrailParam};
 //!
+//! // Note that a final newline is automatically added if missing
 //! let mut frame: Frame = Frame::from_str("hello world");
 //!
 //! // Move cursor to virtual space (beyond line end)
@@ -13,13 +14,13 @@
 //! // Insert text - line is automatically padded
 //! frame.cmd_insert_text(LeadParam::None, &TrailParam::from_str("!"));
 //!
-//! assert_eq!(frame.to_string(), "hello world         !");
+//! assert_eq!(frame.to_string(), "hello world         !\n");
 //!
 //! // Overtype text
 //! frame.set_dot(Position::new(0, 6));
 //! frame.cmd_overtype_text(LeadParam::None, &TrailParam::from_str("universe|"));
 //!
-//! assert_eq!(frame.to_string(), "hello universe|     !");
+//! assert_eq!(frame.to_string(), "hello universe|     !\n");
 //! ```
 
 mod cmd_result;

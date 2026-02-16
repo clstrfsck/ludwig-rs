@@ -42,8 +42,12 @@ impl Frame {
 
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
+        let mut r = Rope::from_str(s);
+        if s.len() > 0 && !s.ends_with('\n') {
+            r.insert_char(r.len_chars(), '\n');
+        }
         Self {
-            rope: Rope::from_str(s),
+            rope: r,
             marks: MarkSet::new(),
         }
     }
@@ -88,12 +92,7 @@ impl Frame {
         if self.rope.len_chars() == 0 {
             return 0;
         }
-        let lines = self.rope.len_lines().saturating_sub(1);
-        if line_length_excluding_newline(&self.rope, lines) > 0 {
-            lines + 1
-        } else {
-            lines
-        }
+        self.rope.len_lines()
     }
 
     /// Materialize virtual space at a position by padding with spaces.

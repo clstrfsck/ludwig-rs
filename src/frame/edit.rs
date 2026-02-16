@@ -142,7 +142,7 @@ impl EditCommands for Frame {
                 if n == 0 {
                     return CmdResult::Success;
                 }
-                if dot.line + n > num_lines {
+                if dot.line + n + 1 > num_lines {
                     return CmdResult::Failure(CmdFailure::OutOfRange);
                 }
                 self.kill_lines_forward(dot.line, n)
@@ -346,7 +346,7 @@ impl Frame {
     /// updating marks appropriately.
     fn delete_line_range(&mut self, from_line: usize, to_line: usize) {
         let num_lines = self.lines();
-        let is_last_line = to_line >= num_lines - 1;
+        let is_last_line = to_line + 1 >= num_lines;
 
         if !is_last_line {
             // Normal case: delete from start of from_line to start of to_line+1.
@@ -355,10 +355,9 @@ impl Frame {
             let to_pos = Position::new(to_line + 1, 0);
             self.delete(from_pos, to_pos);
         } else if from_line > 0 {
-            // Deleting to the end: also remove the newline at end of the preceding line.
-            let prev_line_len = line_length_excluding_newline(&self.rope, from_line - 1);
-            let last_line_len = line_length_excluding_newline(&self.rope, to_line);
-            let from_pos = Position::new(from_line - 1, prev_line_len);
+            // Deleting to the end; also delete the last line's newline
+            let last_line_len = self.rope.line(to_line).len_chars();
+            let from_pos = Position::new(from_line, 0);
             let to_pos = Position::new(to_line, last_line_len);
             self.delete(from_pos, to_pos);
         } else {

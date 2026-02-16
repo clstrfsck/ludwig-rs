@@ -82,29 +82,29 @@ mod tests {
 
     #[test]
     fn test_execute_insert_command() {
-        let (editor, outcome) = exec("hello", "i/world /");
+        let (editor, outcome) = exec("hello\n", "i/world /");
         assert_eq!(outcome, ExecOutcome::Success);
-        assert_eq!(editor.to_string(), "world hello");
+        assert_eq!(editor.to_string(), "world hello\n");
     }
 
     #[test]
     fn test_execute_multiple_commands() {
-        let (editor, outcome) = exec("hello world", "5ji/!/");
+        let (editor, outcome) = exec("hello world\n", "5ji/!/");
         assert_eq!(outcome, ExecOutcome::Success);
-        assert_eq!(editor.to_string(), "hello! world");
+        assert_eq!(editor.to_string(), "hello! world\n");
     }
 
     #[test]
     fn test_execute_commands_failure_stops() {
-        let (editor, outcome) = exec("hello", "2ai/!/");
+        let (editor, outcome) = exec("hello\n", "2ai/!/");
         assert_eq!(outcome, ExecOutcome::Failure);
-        assert_eq!(editor.to_string(), "hello");
+        assert_eq!(editor.to_string(), "hello\n");
     }
 
     #[test]
     fn test_display_delegates_to_frame() {
-        let editor = Editor::from_str("test content");
-        assert_eq!(editor.to_string(), "test content");
+        let editor = Editor::from_str("test content\n");
+        assert_eq!(editor.to_string(), "test content\n");
     }
 
     #[test]
@@ -127,16 +127,16 @@ mod tests {
     #[test]
     fn test_exit_handler_failure_branch() {
         // 2A fails on single-line content, so failure handler runs
-        let (editor, outcome) = exec("hello", "2A[:I/fail/]");
+        let (editor, outcome) = exec("hello\n", "2A[:I/fail/]");
         // The failure handler inserts "fail" (success outcome from handler)
         assert_eq!(outcome, ExecOutcome::Success);
-        assert_eq!(editor.to_string(), "failhello");
+        assert_eq!(editor.to_string(), "failhello\n");
     }
 
     #[test]
     fn test_exit_handler_no_matching_branch() {
         // A succeeds, but only failure handler defined → outcome passes through
-        let (_, outcome) = exec("hello", "A[:I/fail/]");
+        let (_, outcome) = exec("hello\n", "A[:I/fail/]");
         assert_eq!(outcome, ExecOutcome::Success);
     }
 
@@ -145,50 +145,50 @@ mod tests {
     #[test]
     fn test_compound_times() {
         // 3(J) jumps 3 positions forward
-        let (editor, outcome) = exec("hello world", "3(J)I/!/");
+        let (editor, outcome) = exec("hello world\n", "3(J)I/!/");
         assert_eq!(outcome, ExecOutcome::Success);
-        assert_eq!(editor.to_string(), "hel!lo world");
+        assert_eq!(editor.to_string(), "hel!lo world\n");
     }
 
     #[test]
     fn test_compound_indefinite() {
         // >(A) advances until it fails at end of file
-        let (editor, outcome) = exec("line1\nline2\nline3", ">(A)[i/yes/:i/no/]");
+        let (editor, outcome) = exec("line1\nline2\nline3\n", ">(A)[i/yes/:i/no/]");
         // The exit handler should run successfully
         assert_eq!(outcome, ExecOutcome::Success);
         // Should end up at the end, insert "no"
-        assert_eq!(editor.to_string(), "line1\nline2\nnoline3");
+        assert_eq!(editor.to_string(), "line1\nline2\nnoline3\n");
     }
 
     #[test]
     fn test_compound_fails() {
         // >(A) advances until it fails at end of file
-        let (editor, outcome) = exec("line1\nline2\nline3", ">(A)");
+        let (editor, outcome) = exec("line1\nline2\nline3\n", ">(A)");
         assert_eq!(outcome, ExecOutcome::Failure);
-        assert_eq!(editor.to_string(), "line1\nline2\nline3");
+        assert_eq!(editor.to_string(), "line1\nline2\nline3\n");
     }
 
     #[test]
     fn test_compound_succeeds_with_empty_exit_handler_1() {
         // >(A) advances until it fails at end of file
-        let (editor, outcome) = exec("line1\nline2\nline3", ">(A)[:]");
+        let (editor, outcome) = exec("line1\nline2\nline3\n", ">(A)[:]");
         assert_eq!(outcome, ExecOutcome::Success);
-        assert_eq!(editor.to_string(), "line1\nline2\nline3");
+        assert_eq!(editor.to_string(), "line1\nline2\nline3\n");
     }
 
     #[test]
     fn test_compound_succeeds_with_empty_exit_handler_2() {
         // >(A) advances until it fails at end of file
-        let (editor, outcome) = exec("line1\nline2\nline3", ">(A)[]");
+        let (editor, outcome) = exec("line1\nline2\nline3\n", ">(A)[]");
         assert_eq!(outcome, ExecOutcome::Success);
-        assert_eq!(editor.to_string(), "line1\nline2\nline3");
+        assert_eq!(editor.to_string(), "line1\nline2\nline3\n");
     }
 
     #[test]
     fn test_compound_once() {
-        let (editor, outcome) = exec("hello", "(5J)I/!/");
+        let (editor, outcome) = exec("hello\n", "(5J)I/!/");
         assert_eq!(outcome, ExecOutcome::Success);
-        assert_eq!(editor.to_string(), "hello!");
+        assert_eq!(editor.to_string(), "hello!\n");
     }
 
     #[test]
@@ -241,9 +241,9 @@ mod tests {
     #[test]
     fn test_xs_all_levels() {
         // >XS exits all levels, so I never runs
-        let (editor, outcome) = exec("line1\nline2", "(((A >XS 5J)))I/!/");
+        let (editor, outcome) = exec("line1\nline2\n", "(((A >XS 5J)))I/!/");
         assert_eq!(outcome, ExecOutcome::ExitSuccessAll);
-        assert_eq!(editor.to_string(), "line1\nline2");
+        assert_eq!(editor.to_string(), "line1\nline2\n");
         assert_eq!(editor.current_frame().dot(), Position::new(1, 0));
     }
 
@@ -252,9 +252,9 @@ mod tests {
     #[test]
     fn test_failure_stops_sequence() {
         // 99A fails, I should not execute
-        let (editor, outcome) = exec("hello", "99AI/!/");
+        let (editor, outcome) = exec("hello\n", "99AI/!/");
         assert_eq!(outcome, ExecOutcome::Failure);
-        assert_eq!(editor.to_string(), "hello");
+        assert_eq!(editor.to_string(), "hello\n");
     }
 
     // --- Exit handler on compound ---
