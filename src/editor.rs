@@ -1,7 +1,7 @@
 use std::fmt;
 
-use crate::frame::{EditCommands, MotionCommands};
-use crate::{CmdFailure, code::*};
+use crate::frame::{CaseMode, EditCommands, MotionCommands};
+use crate::{CmdFailure, MarkId, code::*};
 use crate::{CmdResult, Frame, TrailParam};
 
 pub struct Editor {
@@ -34,6 +34,10 @@ impl Editor {
 
     pub fn current_frame_mut(&mut self) -> &mut Frame {
         &mut self.frame
+    }
+
+    pub fn modified(&self) -> bool {
+        self.frame.get_mark(MarkId::Modified).is_some()
     }
 
     /// Execute compiled code. Top-level entry point.
@@ -187,6 +191,10 @@ impl Editor {
             CmdOp::InsertChar => frame.cmd_insert_char(lead),
             CmdOp::InsertLine => frame.cmd_insert_line(lead),
             CmdOp::SplitLine => frame.cmd_split_line(lead),
+            CmdOp::DeleteLine => frame.cmd_delete_line(lead),
+            CmdOp::CaseUp => frame.cmd_case_change(lead, CaseMode::Upper),
+            CmdOp::CaseLow => frame.cmd_case_change(lead, CaseMode::Lower),
+            CmdOp::CaseEdit => frame.cmd_case_change(lead, CaseMode::Edit),
             // FIXME: remove this when everything is implemented
             _ => CmdResult::Failure(CmdFailure::NotImplemented),
         }

@@ -2,6 +2,7 @@ use super::*;
 use crate::lead_param::LeadParam;
 use crate::marks::MarkId;
 use crate::trail_param::TrailParam;
+use edit::CaseMode;
 
 #[test]
 fn test_calculate_insert_effect() {
@@ -627,5 +628,396 @@ fn split_line_vspace() {
     let result = f.cmd_split_line(LeadParam::None);
     assert!(result.is_success());
     assert_eq!(f.to_string(), "hello!\n");
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+// --- Case change tests ---
+
+#[test]
+fn case_up_single_char() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_case_change(LeadParam::None, CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "Hello");
+    assert_eq!(f.dot(), Position::new(0, 1));
+}
+
+#[test]
+fn case_up_multiple_chars() {
+    let mut f = Frame::from_str("hello world");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_case_change(LeadParam::Pint(5), CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "HELLO world");
+    assert_eq!(f.dot(), Position::new(0, 5));
+}
+
+#[test]
+fn case_low_multiple_chars() {
+    let mut f = Frame::from_str("HELLO WORLD");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_case_change(LeadParam::Pint(5), CaseMode::Lower);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello WORLD");
+    assert_eq!(f.dot(), Position::new(0, 5));
+}
+
+#[test]
+fn case_edit_capitalizes_words() {
+    let mut f = Frame::from_str("hello world");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_case_change(LeadParam::Pint(11), CaseMode::Edit);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "Hello World");
+    assert_eq!(f.dot(), Position::new(0, 11));
+}
+
+#[test]
+fn case_edit_from_mid_word() {
+    let mut f = Frame::from_str("hELLO");
+    f.set_dot(Position::new(0, 1));
+    let result = f.cmd_case_change(LeadParam::Pint(4), CaseMode::Edit);
+    assert!(result.is_success());
+    // Preceding char 'h' is a letter, so all become lowercase
+    assert_eq!(f.to_string(), "hello");
+}
+
+#[test]
+fn case_up_backward() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 5));
+    let result = f.cmd_case_change(LeadParam::Nint(3), CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "heLLO");
+    assert_eq!(f.dot(), Position::new(0, 2));
+}
+
+#[test]
+fn case_up_backward_single() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_case_change(LeadParam::Minus, CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "heLlo");
+    assert_eq!(f.dot(), Position::new(0, 2));
+}
+
+#[test]
+fn case_up_pindef_to_eol() {
+    let mut f = Frame::from_str("hello world");
+    f.set_dot(Position::new(0, 6));
+    let result = f.cmd_case_change(LeadParam::Pindef, CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello WORLD");
+    assert_eq!(f.dot(), Position::new(0, 11));
+}
+
+#[test]
+fn case_low_nindef_to_col0() {
+    let mut f = Frame::from_str("HELLO WORLD");
+    f.set_dot(Position::new(0, 5));
+    let result = f.cmd_case_change(LeadParam::Nindef, CaseMode::Lower);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello WORLD");
+    assert_eq!(f.dot(), Position::new(0, 0));
+}
+
+#[test]
+fn case_change_at_eol_is_noop() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 5));
+    let result = f.cmd_case_change(LeadParam::None, CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello");
+    assert_eq!(f.dot(), Position::new(0, 5));
+}
+
+#[test]
+fn case_change_in_virtual_space_is_noop() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 10));
+    let result = f.cmd_case_change(LeadParam::Pint(3), CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello");
+}
+
+#[test]
+fn case_change_clamps_to_eol() {
+    // Requesting more chars than available should change what's there
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_case_change(LeadParam::Pint(100), CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "helLO");
+    assert_eq!(f.dot(), Position::new(0, 5));
+}
+
+#[test]
+fn case_change_sets_marks() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    f.cmd_case_change(LeadParam::Pint(3), CaseMode::Upper);
+    assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 3));
+    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 0));
+}
+
+#[test]
+fn case_change_backward_sets_marks() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 5));
+    f.cmd_case_change(LeadParam::Nint(3), CaseMode::Upper);
+    assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 2));
+    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 5));
+}
+
+#[test]
+fn case_change_non_alpha_unchanged() {
+    let mut f = Frame::from_str("h3llo!");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_case_change(LeadParam::Pint(6), CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "H3LLO!");
+}
+
+#[test]
+fn case_edit_non_alpha_triggers_uppercase() {
+    // *E: after a non-letter (digit), next letter becomes uppercase
+    let mut f = Frame::from_str("abc1def");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_case_change(LeadParam::Pint(7), CaseMode::Edit);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "Abc1Def");
+}
+
+#[test]
+fn case_change_rejects_marker_lead() {
+    let mut f = Frame::from_str("hello");
+    let result = f.cmd_case_change(LeadParam::Marker(MarkId::Dot), CaseMode::Upper);
+    assert!(result.is_failure());
+}
+
+#[test]
+fn case_up_zero_count_noop() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_case_change(LeadParam::Pint(0), CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello");
+    assert_eq!(f.dot(), Position::new(0, 0));
+}
+
+#[test]
+fn case_backward_at_col0_noop() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_case_change(LeadParam::Minus, CaseMode::Upper);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello");
+    assert_eq!(f.dot(), Position::new(0, 0));
+}
+
+// --- Delete line (K) tests ---
+
+#[test]
+fn delete_line_single_from_first() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_delete_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line2\nline3");
+    assert_eq!(f.dot(), Position::new(0, 0));
+}
+
+#[test]
+fn delete_line_single_from_middle() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(1, 3));
+    let result = f.cmd_delete_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line1\nline3");
+    // Dot stays at line 1 col 3 (now on "line3")
+    assert_eq!(f.dot(), Position::new(1, 3));
+}
+
+#[test]
+fn delete_line_single_last_line() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(2, 0));
+    let result = f.cmd_delete_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line1\nline2");
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+#[test]
+fn delete_line_single_only_line() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_delete_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "");
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+#[test]
+fn delete_line_multiple_forward() {
+    let mut f = Frame::from_str("line1\nline2\nline3\nline4");
+    f.set_dot(Position::new(1, 2));
+    let result = f.cmd_delete_line(LeadParam::Pint(2));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line1\nline4");
+    // Dot stays at line 1, column preserved
+    assert_eq!(f.dot(), Position::new(1, 2));
+}
+
+#[test]
+fn delete_line_forward_past_end_fails() {
+    let mut f = Frame::from_str("line1\nline2");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_delete_line(LeadParam::Pint(3));
+    assert!(result.is_failure());
+    assert_eq!(f.to_string(), "line1\nline2");
+}
+
+#[test]
+fn delete_line_on_empty_frame_fails() {
+    let mut f = Frame::new();
+    let result = f.cmd_delete_line(LeadParam::None);
+    assert!(result.is_failure());
+}
+
+#[test]
+fn delete_line_backward_single() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(2, 3));
+    let result = f.cmd_delete_line(LeadParam::Minus);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line1\nline3");
+    // Dot stays on same text (line3), now at line 1, column preserved
+    assert_eq!(f.dot(), Position::new(1, 3));
+}
+
+#[test]
+fn delete_line_backward_multiple() {
+    let mut f = Frame::from_str("line1\nline2\nline3\nline4");
+    f.set_dot(Position::new(3, 0));
+    let result = f.cmd_delete_line(LeadParam::Nint(2));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line1\nline4");
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+#[test]
+fn delete_line_backward_at_first_line_fails() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_delete_line(LeadParam::Minus);
+    assert!(result.is_failure());
+    assert_eq!(f.to_string(), "hello");
+}
+
+#[test]
+fn delete_line_backward_too_many_fails() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(1, 0));
+    let result = f.cmd_delete_line(LeadParam::Nint(3));
+    assert!(result.is_failure());
+    assert_eq!(f.to_string(), "line1\nline2\nline3");
+}
+
+#[test]
+fn delete_line_pindef_from_beginning() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_delete_line(LeadParam::Pindef);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "");
+}
+
+#[test]
+fn delete_line_pindef_from_middle() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(1, 2));
+    let result = f.cmd_delete_line(LeadParam::Pindef);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line1");
+    assert_eq!(f.dot(), Position::new(0, 2));
+}
+
+#[test]
+fn delete_line_nindef() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(2, 0));
+    let result = f.cmd_delete_line(LeadParam::Nindef);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line3");
+    assert_eq!(f.dot(), Position::new(0, 0));
+}
+
+#[test]
+fn delete_line_nindef_at_first_fails() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_delete_line(LeadParam::Nindef);
+    assert!(result.is_failure());
+}
+
+#[test]
+fn delete_line_zero_count_noop() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_delete_line(LeadParam::Pint(0));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "hello");
+}
+
+#[test]
+fn delete_line_preserves_column_in_virtual_space() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(0, 20)); // virtual space
+    let result = f.cmd_delete_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line2\nline3");
+    assert_eq!(f.dot(), Position::new(0, 20));
+}
+
+#[test]
+fn delete_line_sets_marks() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(1, 2));
+    f.cmd_delete_line(LeadParam::None);
+    assert!(f.marks.get(MarkId::Modified).is_some());
+    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(1, 2));
+}
+
+#[test]
+fn delete_line_with_trailing_newline() {
+    let mut f = Frame::from_str("line1\nline2\n");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_delete_line(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line2\n");
+}
+
+#[test]
+fn delete_line_marker() {
+    let mut f = Frame::from_str("line1\nline2\nline3\nline4");
+    f.set_dot(Position::new(1, 0));
+    f.marks.set(MarkId::Numbered(1), Position::new(2, 3));
+    let result = f.cmd_delete_line(LeadParam::Marker(MarkId::Numbered(1)));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line1\nline3\nline4");
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+#[test]
+fn delete_line_marker_before_dot() {
+    let mut f = Frame::from_str("line1\nline2\nline3\nline4");
+    f.set_dot(Position::new(2, 0));
+    f.marks.set(MarkId::Numbered(1), Position::new(1, 0));
+    let result = f.cmd_delete_line(LeadParam::Marker(MarkId::Numbered(1)));
+    assert!(result.is_success());
+    assert_eq!(f.to_string(), "line1\nline3\nline4");
     assert_eq!(f.dot(), Position::new(1, 0));
 }

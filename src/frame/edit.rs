@@ -8,6 +8,14 @@ use crate::trail_param::TrailParam;
 
 use super::Frame;
 
+/// The case-change mode for the `*` command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaseMode {
+    Upper,
+    Lower,
+    Edit,
+}
+
 /// Commands for editing text in the frame.
 pub trait EditCommands {
     /// Insert character(s) command.
@@ -27,6 +35,12 @@ pub trait EditCommands {
 
     /// Split line command.
     fn cmd_split_line(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Case change command (*U, *L, *E).
+    fn cmd_case_change(&mut self, lead_param: LeadParam, mode: CaseMode) -> CmdResult;
+
+    /// Delete (kill) line(s) command (K).
+    fn cmd_delete_line(&mut self, lead_param: LeadParam) -> CmdResult;
 }
 
 impl EditCommands for Frame {
@@ -81,7 +95,7 @@ impl EditCommands for Frame {
     }
 
     fn cmd_split_line(&mut self, lead_param: LeadParam) -> CmdResult {
-        if lead_param == LeadParam::None || lead_param == LeadParam::Plus {
+        if lead_param == LeadParam::None {
             let original_dot = self.dot();
             // We are not going to extend the line, so just clamp the dot to the actual text.
             let clamped_dot = original_dot.clamp_to_text(&self.rope);
@@ -92,6 +106,93 @@ impl EditCommands for Frame {
             CmdResult::Success
         } else {
             CmdResult::Failure(CmdFailure::SyntaxError)
+        }
+    }
+
+    fn cmd_case_change(&mut self, lead_param: LeadParam, mode: CaseMode) -> CmdResult {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.case_change_forward(1, mode),
+            LeadParam::Pint(n) => self.case_change_forward(n, mode),
+            LeadParam::Pindef => {
+                let line_len = line_length_excluding_newline(&self.rope, self.dot().line);
+                let count = line_len.saturating_sub(self.dot().column);
+                self.case_change_forward(count, mode)
+            }
+            LeadParam::Minus => self.case_change_backward(1, mode),
+            LeadParam::Nint(n) => self.case_change_backward(n, mode),
+            LeadParam::Nindef => {
+                let count = self.dot().column;
+                self.case_change_backward(count, mode)
+            }
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
+    fn cmd_delete_line(&mut self, lead_param: LeadParam) -> CmdResult {
+        let num_lines = self.lines();
+        let dot = self.dot();
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => {
+                if dot.line >= num_lines {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.kill_lines_forward(dot.line, 1)
+            }
+            LeadParam::Pint(n) => {
+                if n == 0 {
+                    return CmdResult::Success;
+                }
+                if dot.line + n > num_lines {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.kill_lines_forward(dot.line, n)
+            }
+            LeadParam::Pindef => {
+                if dot.line >= num_lines {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                let count = num_lines - dot.line;
+                self.kill_lines_forward(dot.line, count)
+            }
+            LeadParam::Minus => {
+                if dot.line == 0 {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.kill_lines_backward(dot.line - 1, 1)
+            }
+            LeadParam::Nint(n) => {
+                if n == 0 {
+                    return CmdResult::Success;
+                }
+                if n > dot.line {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.kill_lines_backward(dot.line - n, n)
+            }
+            LeadParam::Nindef => {
+                if dot.line == 0 {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                self.kill_lines_backward(0, dot.line)
+            }
+            LeadParam::Marker(id) => {
+                if let Some(mark_pos) = self.mark_position(id) {
+                    if mark_pos.line == dot.line {
+                        // Mark is on the same line as dot, so nothing to delete.
+                        CmdResult::Success
+                    } else if mark_pos.line < dot.line {
+                        // Mark is above dot, so delete backward (lines above dot).
+                        let count = dot.line - mark_pos.line;
+                        self.kill_lines_backward(mark_pos.line, count)
+                    } else {
+                        // Mark is below dot, so delete forward (lines below dot).
+                        let count = mark_pos.line - dot.line;
+                        self.kill_lines_forward(dot.line, count)
+                    }
+                } else {
+                    CmdResult::Failure(CmdFailure::MarkNotDefined)
+                }
+            }
         }
     }
 }
@@ -207,5 +308,169 @@ impl Frame {
         self.set_mark(MarkId::Modified);
         self.set_mark_at(MarkId::Last, last);
         CmdResult::Success
+    }
+}
+
+// Private implementation helpers for line deletion
+impl Frame {
+    /// Delete `count` lines starting at `from_line` (forward kill).
+    /// Dot column is preserved; dot stays at `from_line` (now containing the
+    /// content that was after the deleted range).
+    fn kill_lines_forward(&mut self, from_line: usize, count: usize) -> CmdResult {
+        let original_dot = self.dot();
+        let to_line = from_line + count - 1;
+        self.delete_line_range(from_line, to_line);
+        // Dot column preserved, dot line stays at from_line (mark update handles shift)
+        // But we need to restore the column since delete may have moved dot
+        self.set_dot(Position::new(from_line, original_dot.column));
+        self.set_mark(MarkId::Modified);
+        self.set_mark_at(MarkId::Last, original_dot);
+        CmdResult::Success
+    }
+
+    /// Delete `count` lines starting at `from_line` (backward kill — lines above dot).
+    /// Dot stays on the same text content (its line number shifts up by `count`).
+    fn kill_lines_backward(&mut self, from_line: usize, count: usize) -> CmdResult {
+        let original_dot = self.dot();
+        let to_line = from_line + count - 1;
+        self.delete_line_range(from_line, to_line);
+        // Dot was after the deleted range, so mark update already shifted it up.
+        // Just preserve the column.
+        self.set_dot(Position::new(original_dot.line - count, original_dot.column));
+        self.set_mark(MarkId::Modified);
+        self.set_mark_at(MarkId::Last, original_dot);
+        CmdResult::Success
+    }
+
+    /// Delete lines `from_line` through `to_line` (inclusive) from the rope,
+    /// updating marks appropriately.
+    fn delete_line_range(&mut self, from_line: usize, to_line: usize) {
+        let num_lines = self.lines();
+        let is_last_line = to_line >= num_lines - 1;
+
+        if !is_last_line {
+            // Normal case: delete from start of from_line to start of to_line+1.
+            // This removes the lines and their trailing newlines.
+            let from_pos = Position::new(from_line, 0);
+            let to_pos = Position::new(to_line + 1, 0);
+            self.delete(from_pos, to_pos);
+        } else if from_line > 0 {
+            // Deleting to the end: also remove the newline at end of the preceding line.
+            let prev_line_len = line_length_excluding_newline(&self.rope, from_line - 1);
+            let last_line_len = line_length_excluding_newline(&self.rope, to_line);
+            let from_pos = Position::new(from_line - 1, prev_line_len);
+            let to_pos = Position::new(to_line, last_line_len);
+            self.delete(from_pos, to_pos);
+        } else {
+            // Deleting all lines from 0 to end.
+            let last_line_len = line_length_excluding_newline(&self.rope, to_line);
+            let from_pos = Position::new(0, 0);
+            let to_pos = Position::new(to_line, last_line_len);
+            self.delete(from_pos, to_pos);
+        }
+    }
+}
+
+// Private implementation helpers for case change
+impl Frame {
+    fn case_change_forward(&mut self, count: usize, mode: CaseMode) -> CmdResult {
+        if count == 0 {
+            return CmdResult::Success;
+        }
+        let dot = self.dot();
+        let line_len = line_length_excluding_newline(&self.rope, dot.line);
+        // In virtual space or nothing to change
+        if dot.column >= line_len {
+            return CmdResult::Success;
+        }
+        let actual_count = count.min(line_len - dot.column);
+        let line_start = self.rope.line_to_char(dot.line);
+        let start_idx = line_start + dot.column;
+
+        self.apply_case_change(start_idx, actual_count, dot.column, mode);
+
+        let original_dot = dot;
+        self.set_dot(Position::new(dot.line, dot.column + actual_count));
+        self.set_mark(MarkId::Modified);
+        self.set_mark_at(MarkId::Last, original_dot);
+        CmdResult::Success
+    }
+
+    fn case_change_backward(&mut self, count: usize, mode: CaseMode) -> CmdResult {
+        if count == 0 {
+            return CmdResult::Success;
+        }
+        let dot = self.dot();
+        if dot.column == 0 {
+            return CmdResult::Success;
+        }
+        let line_len = line_length_excluding_newline(&self.rope, dot.line);
+        // Clamp dot to actual text for the purpose of the backward range
+        let effective_col = dot.column.min(line_len);
+        let actual_count = count.min(effective_col);
+        let new_col = effective_col - actual_count;
+        let line_start = self.rope.line_to_char(dot.line);
+        let start_idx = line_start + new_col;
+
+        self.apply_case_change(start_idx, actual_count, new_col, mode);
+
+        let original_dot = dot;
+        self.set_dot(Position::new(dot.line, new_col));
+        self.set_mark(MarkId::Modified);
+        self.set_mark_at(MarkId::Last, original_dot);
+        CmdResult::Success
+    }
+
+    /// Apply case change to `count` chars starting at rope index `start_idx`.
+    /// `start_column` is the column of `start_idx` on its line (used for *E logic).
+    fn apply_case_change(
+        &mut self,
+        start_idx: usize,
+        count: usize,
+        start_column: usize,
+        mode: CaseMode,
+    ) {
+        // Collect the characters we need to change
+        let chars: Vec<char> = self
+            .rope
+            .chars_at(start_idx)
+            .take(count)
+            .collect();
+
+        let new_chars: Vec<char> = match mode {
+            CaseMode::Upper => chars.iter().map(|c| c.to_ascii_uppercase()).collect(),
+            CaseMode::Lower => chars.iter().map(|c| c.to_ascii_lowercase()).collect(),
+            CaseMode::Edit => {
+                // For *E: if preceding char is a letter → lowercase, else → uppercase.
+                // The "preceding char" for position i is the result of changing position i-1.
+                let mut result = Vec::with_capacity(count);
+                let mut prev = if start_column > 0 {
+                    // Get the character before the range
+                    self.rope.char(start_idx - 1)
+                } else {
+                    ' ' // Before column 0, treat as non-letter
+                };
+                for &ch in &chars {
+                    let new_ch = if prev.is_ascii_alphabetic() {
+                        ch.to_ascii_lowercase()
+                    } else {
+                        ch.to_ascii_uppercase()
+                    };
+                    prev = new_ch;
+                    result.push(new_ch);
+                }
+                result
+            }
+        };
+
+        // Check if anything actually changed
+        if chars == new_chars {
+            return;
+        }
+
+        // Replace in the rope character by character
+        let new_str: String = new_chars.into_iter().collect();
+        self.rope.remove(start_idx..start_idx + count);
+        self.rope.insert(start_idx, &new_str);
     }
 }

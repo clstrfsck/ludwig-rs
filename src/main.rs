@@ -94,7 +94,7 @@ fn main() {
     for line in output {
         println!("{}", line);
     }
-    if !failed && let Some(path) = maybe_path.as_ref() {
+    if !failed && editor.modified() && let Some(path) = maybe_path.as_ref() {
         fs::rename(path, format!("{}~1", path)).unwrap();
         let mut contents = editor.to_string();
         if !contents.is_empty() && !contents.ends_with('\n') {

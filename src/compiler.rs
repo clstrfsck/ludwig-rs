@@ -3,6 +3,7 @@
 //! Transforms a textual command string into a tree-structured [`CompiledCode`].
 
 use itertools::Itertools;
+use phf::{Map, phf_map};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -64,7 +65,15 @@ fn cmd_attrib(op: CmdOp) -> CmdAttrib {
             tpar_count: 0,
         },
         CmdOp::SplitLine => CmdAttrib {
-            allowed_leads: &[None, Plus],
+            allowed_leads: &[None],
+            tpar_count: 0,
+        },
+        CmdOp::CaseUp | CmdOp::CaseLow | CmdOp::CaseEdit => CmdAttrib {
+            allowed_leads: &[None, Plus, Minus, Pint, Nint, Pindef, Nindef],
+            tpar_count: 0,
+        },
+        CmdOp::DeleteLine => CmdAttrib {
+            allowed_leads: &[None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker],
             tpar_count: 0,
         },
         // Not implemented yet
@@ -165,11 +174,11 @@ impl Compiler<'_> {
 
     /// Parse a simple command (or exit command) with optional trailing param and exit handler.
     fn compile_simple(&mut self, lead: LeadParam) -> Result<Instruction> {
-        let name = self.parse_command_name()?;
+        let op = self.parse_command_name()?;
 
         // Handle exit commands
-        match name.as_str() {
-            "xs" => {
+        match op {
+            CmdOp::ExitSuccess => {
                 let levels = match lead {
                     LeadParam::None | LeadParam::Plus => ExitLevels::Count(1),
                     LeadParam::Pint(n) => ExitLevels::Count(n),
@@ -179,7 +188,7 @@ impl Compiler<'_> {
                 let _ = self.parse_exit_handler()?;
                 return Ok(Instruction::ExitSuccess(levels));
             }
-            "xf" => {
+            CmdOp::ExitFailure => {
                 let levels = match lead {
                     LeadParam::None | LeadParam::Plus => ExitLevels::Count(1),
                     LeadParam::Pint(n) => ExitLevels::Count(n),
@@ -189,7 +198,7 @@ impl Compiler<'_> {
                 let _ = self.parse_exit_handler()?;
                 return Ok(Instruction::ExitFailure(levels));
             }
-            "xa" => {
+            CmdOp::ExitAbort => {
                 if lead != LeadParam::None && lead != LeadParam::Plus {
                     bail!("Syntax error: XA does not accept a leading parameter.");
                 }
@@ -199,16 +208,12 @@ impl Compiler<'_> {
             _ => {}
         }
 
-        let op = name_to_op(&name)?;
         let attrib = cmd_attrib(op);
 
         // Validate leading parameter
         let kind = lead_param_kind(&lead);
         if !attrib.allowed_leads.contains(&kind) {
-            bail!(
-                "Syntax error: invalid leading parameter for command '{}'.",
-                name.to_uppercase()
-            );
+            bail!("Syntax error.");
         }
 
         // Parse trailing parameter if needed
@@ -313,25 +318,24 @@ impl Compiler<'_> {
         }
     }
 
-    /// Parse a command name (1-3 lowercase letters).
-    fn parse_command_name(&mut self) -> Result<String> {
+    /// Parse a command name (1-3 chars, may start with `*` for prefix commands).
+    fn parse_command_name(&mut self) -> Result<CmdOp> {
         let mut name = String::new();
         // Collect up to 3 alphabetic chars
         while let Some(&ch) = self.chars.peek() {
-            if ch.is_ascii_alphabetic() && name.len() < 3 {
+            if is_command_char(ch) && name.len() < 3 {
                 name.push(ch.to_ascii_lowercase());
                 self.chars.next();
                 // Check if this is a known command name
-                if is_known_command(&name) {
-                    return Ok(name);
+                if let Ok(op) = name_to_op(&name) {
+                    // If it's known, we can return it immediately
+                    return Ok(op);
                 }
             } else {
                 break;
             }
         }
         if name.is_empty() {
-            let remaining: String = self.chars.clone().collect();
-            println!("Remaining input: {}", remaining);
             bail!("Syntax error: expected command name.");
         }
         bail!("Syntax error: unknown command '{}'.", name.to_uppercase());
@@ -377,27 +381,39 @@ impl Compiler<'_> {
     }
 }
 
+const NAME_TO_OP_MAP: Map<&'static str, CmdOp> = phf_map! {
+    "a" => CmdOp::Advance,
+    "j" => CmdOp::Jump,
+    "d" => CmdOp::DeleteChar,
+    "i" => CmdOp::InsertText,
+    "o" => CmdOp::OvertypeText,
+    "c" => CmdOp::InsertChar,
+    "l" => CmdOp::InsertLine,
+    "sl" => CmdOp::SplitLine,
+    "k" => CmdOp::DeleteLine,
+    "xa" => CmdOp::ExitAbort,
+    "xf" => CmdOp::ExitFailure,
+    "xs" => CmdOp::ExitSuccess,
+    "*u" => CmdOp::CaseUp,
+    "*l" => CmdOp::CaseLow,
+    "*e" => CmdOp::CaseEdit,
+};
+
 /// Map a command name string to its CmdOp.
 fn name_to_op(name: &str) -> Result<CmdOp> {
-    match name {
-        "a" => Ok(CmdOp::Advance),
-        "j" => Ok(CmdOp::Jump),
-        "d" => Ok(CmdOp::DeleteChar),
-        "i" => Ok(CmdOp::InsertText),
-        "o" => Ok(CmdOp::OvertypeText),
-        "c" => Ok(CmdOp::InsertChar),
-        "l" => Ok(CmdOp::InsertLine),
-        "sl" => Ok(CmdOp::SplitLine),
-        _ => bail!("Syntax error: unknown command '{}'.", name.to_uppercase()),
-    }
+    NAME_TO_OP_MAP.get(name)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("Syntax error: unknown command '{}'.", name.to_uppercase()))
 }
 
 /// Check whether a string is a known command name.
 fn is_known_command(name: &str) -> bool {
-    matches!(
-        name,
-        "a" | "j" | "d" | "i" | "o" | "c" | "l" | "sl" | "xs" | "xf" | "xa"
-    )
+    NAME_TO_OP_MAP.contains_key(name)
+}
+
+/// Check if a character is valid in a command name.
+fn is_command_char(ch: char) -> bool {
+    matches!(ch, '\\' | '"' | '\'' | '*' | '{' | '}' | '?') || ch.is_ascii_alphabetic()
 }
 
 #[cfg(test)]
@@ -725,7 +741,7 @@ mod tests {
     #[test]
     fn test_invalid_lead_for_split_line() {
         let msg = compile_err(">SL");
-        assert!(msg.contains("invalid leading parameter"), "got: {}", msg);
+        assert!(msg.contains("Syntax error."), "got: {}", msg);
     }
 
     #[test]
@@ -789,5 +805,72 @@ mod tests {
             }
             _ => panic!("expected SimpleCmd"),
         }
+    }
+
+    // --- Case change commands ---
+
+    #[test]
+    fn test_case_up() {
+        let instrs = compile_ok("*U");
+        match &instrs[0] {
+            Instruction::SimpleCmd { op, lead, .. } => {
+                assert_eq!(*op, CmdOp::CaseUp);
+                assert_eq!(*lead, LeadParam::None);
+            }
+            _ => panic!("expected SimpleCmd"),
+        }
+    }
+
+    #[test]
+    fn test_case_low_with_count() {
+        let instrs = compile_ok("5*L");
+        match &instrs[0] {
+            Instruction::SimpleCmd { op, lead, .. } => {
+                assert_eq!(*op, CmdOp::CaseLow);
+                assert_eq!(*lead, LeadParam::Pint(5));
+            }
+            _ => panic!("expected SimpleCmd"),
+        }
+    }
+
+    #[test]
+    fn test_case_edit_pindef() {
+        let instrs = compile_ok(">*E");
+        match &instrs[0] {
+            Instruction::SimpleCmd { op, lead, .. } => {
+                assert_eq!(*op, CmdOp::CaseEdit);
+                assert_eq!(*lead, LeadParam::Pindef);
+            }
+            _ => panic!("expected SimpleCmd"),
+        }
+    }
+
+    #[test]
+    fn test_case_low_lowercase() {
+        let instrs = compile_ok("*l");
+        match &instrs[0] {
+            Instruction::SimpleCmd { op, .. } => {
+                assert_eq!(*op, CmdOp::CaseLow);
+            }
+            _ => panic!("expected SimpleCmd"),
+        }
+    }
+
+    #[test]
+    fn test_case_with_exit_handler() {
+        let instrs = compile_ok("*U[I/ok/]");
+        match &instrs[0] {
+            Instruction::SimpleCmd { op, exit_handler, .. } => {
+                assert_eq!(*op, CmdOp::CaseUp);
+                assert!(exit_handler.is_some());
+            }
+            _ => panic!("expected SimpleCmd"),
+        }
+    }
+
+    #[test]
+    fn test_case_invalid_star() {
+        let msg = compile_err("*Z");
+        assert!(msg.contains("unknown command"), "got: {}", msg);
     }
 }

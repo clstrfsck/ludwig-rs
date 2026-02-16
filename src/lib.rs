@@ -36,7 +36,7 @@ pub use cmd_result::{CmdFailure, CmdResult};
 pub use code::{CompiledCode, ExecOutcome};
 pub use compiler::compile;
 pub use editor::Editor;
-pub use frame::{EditCommands, Frame, MotionCommands};
+pub use frame::{CaseMode, EditCommands, Frame, MotionCommands};
 pub use lead_param::LeadParam;
 pub use marks::{MarkId, MarkSet};
 pub use position::{Position, line_length_excluding_newline};

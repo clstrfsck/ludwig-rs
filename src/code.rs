@@ -207,7 +207,7 @@ pub enum CmdOp {
     Extended,
 
     ExitAbort,
-    ExitFail,
+    ExitFailure,
     ExitSuccess,
 
     // End of user commands

@@ -3,7 +3,7 @@
 mod edit;
 mod motion;
 
-pub use edit::EditCommands;
+pub use edit::{CaseMode, EditCommands};
 pub use motion::MotionCommands;
 
 use std::fmt;
@@ -56,6 +56,10 @@ impl Frame {
     pub fn set_dot(&mut self, position: Position) {
         let use_line = position.line.min(self.rope.len_lines().saturating_sub(1));
         self.marks.set_dot(Position::new(use_line, position.column));
+    }
+
+    pub fn get_mark(&self, id: MarkId) -> Option<Position> {
+        self.marks.get(id)
     }
 
     /// Create a new mark at the current dot position.
