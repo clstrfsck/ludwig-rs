@@ -27,6 +27,7 @@ pub mod code;
 pub mod compiler;
 mod editor;
 mod frame;
+mod interpreter;
 mod lead_param;
 mod marks;
 mod position;

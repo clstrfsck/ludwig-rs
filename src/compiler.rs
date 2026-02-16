@@ -14,89 +14,6 @@ use crate::lead_param::LeadParam;
 use crate::marks::{MarkId, NUMBERED_MARK_RANGE};
 use crate::trail_param::TrailParam;
 
-/// Which kinds of leading parameter are accepted (used for validation).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LeadParamKind {
-    None,
-    Plus,
-    Minus,
-    Pint,
-    Nint,
-    Pindef,
-    Nindef,
-    Marker,
-}
-
-/// Attributes of a primitive command.
-struct CmdAttrib {
-    allowed_leads: &'static [LeadParamKind],
-    tpar_count: u8,
-}
-
-fn cmd_attrib(op: CmdOp) -> CmdAttrib {
-    use LeadParamKind::*;
-    match op {
-        CmdOp::Advance => CmdAttrib {
-            allowed_leads: &[None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker],
-            tpar_count: 0,
-        },
-        CmdOp::Jump => CmdAttrib {
-            allowed_leads: &[None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker],
-            tpar_count: 0,
-        },
-        CmdOp::DeleteChar => CmdAttrib {
-            allowed_leads: &[None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker],
-            tpar_count: 0,
-        },
-        CmdOp::InsertText => CmdAttrib {
-            allowed_leads: &[None, Plus, Pint],
-            tpar_count: 1,
-        },
-        CmdOp::OvertypeText => CmdAttrib {
-            allowed_leads: &[None, Plus, Pint],
-            tpar_count: 1,
-        },
-        CmdOp::InsertChar => CmdAttrib {
-            allowed_leads: &[None, Plus, Minus, Pint, Nint],
-            tpar_count: 0,
-        },
-        CmdOp::InsertLine => CmdAttrib {
-            allowed_leads: &[None, Plus, Minus, Pint, Nint],
-            tpar_count: 0,
-        },
-        CmdOp::SplitLine => CmdAttrib {
-            allowed_leads: &[None],
-            tpar_count: 0,
-        },
-        CmdOp::CaseUp | CmdOp::CaseLow | CmdOp::CaseEdit => CmdAttrib {
-            allowed_leads: &[None, Plus, Minus, Pint, Nint, Pindef, Nindef],
-            tpar_count: 0,
-        },
-        CmdOp::DeleteLine => CmdAttrib {
-            allowed_leads: &[None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker],
-            tpar_count: 0,
-        },
-        // Not implemented yet
-        _ => CmdAttrib {
-            allowed_leads: &[],
-            tpar_count: 0,
-        },
-    }
-}
-
-fn lead_param_kind(lp: &LeadParam) -> LeadParamKind {
-    match lp {
-        LeadParam::None => LeadParamKind::None,
-        LeadParam::Plus => LeadParamKind::Plus,
-        LeadParam::Minus => LeadParamKind::Minus,
-        LeadParam::Pint(_) => LeadParamKind::Pint,
-        LeadParam::Nint(_) => LeadParamKind::Nint,
-        LeadParam::Pindef => LeadParamKind::Pindef,
-        LeadParam::Nindef => LeadParamKind::Nindef,
-        LeadParam::Marker(_) => LeadParamKind::Marker,
-    }
-}
-
 /// Compile a Ludwig command string into a [`CompiledCode`] tree.
 pub fn compile(input: &str) -> Result<CompiledCode> {
     let mut compiler = Compiler {
@@ -174,10 +91,10 @@ impl Compiler<'_> {
 
     /// Parse a simple command (or exit command) with optional trailing param and exit handler.
     fn compile_simple(&mut self, lead: LeadParam) -> Result<Instruction> {
-        let op = self.parse_command_name()?;
+        let cmd = self.parse_command()?;
 
         // Handle exit commands
-        match op {
+        match cmd.op {
             CmdOp::ExitSuccess => {
                 let levels = match lead {
                     LeadParam::None | LeadParam::Plus => ExitLevels::Count(1),
@@ -208,16 +125,14 @@ impl Compiler<'_> {
             _ => {}
         }
 
-        let attrib = cmd_attrib(op);
-
         // Validate leading parameter
         let kind = lead_param_kind(&lead);
-        if !attrib.allowed_leads.contains(&kind) {
+        if !cmd.allows_lead(&kind) {
             bail!("Syntax error.");
         }
 
         // Parse trailing parameter if needed
-        let tpar = if attrib.tpar_count > 0 {
+        let tpar = if cmd.tpar_count > 0 {
             Some(self.parse_trailing_param()?)
         } else {
             None
@@ -226,7 +141,7 @@ impl Compiler<'_> {
         let exit_handler = self.parse_exit_handler()?;
 
         Ok(Instruction::SimpleCmd {
-            op,
+            op: cmd.op,
             lead,
             tpar,
             exit_handler,
@@ -319,7 +234,7 @@ impl Compiler<'_> {
     }
 
     /// Parse a command name (1-3 chars, may start with `*` for prefix commands).
-    fn parse_command_name(&mut self) -> Result<CmdOp> {
+    fn parse_command(&mut self) -> Result<&'static CmdInfo> {
         let mut name = String::new();
         // Collect up to 3 alphabetic chars
         while let Some(&ch) = self.chars.peek() {
@@ -327,9 +242,9 @@ impl Compiler<'_> {
                 name.push(ch.to_ascii_lowercase());
                 self.chars.next();
                 // Check if this is a known command name
-                if let Ok(op) = name_to_op(&name) {
+                if let Ok(info) = name_to_info(&name) {
                     // If it's known, we can return it immediately
-                    return Ok(op);
+                    return Ok(info);
                 }
             } else {
                 break;
@@ -381,34 +296,138 @@ impl Compiler<'_> {
     }
 }
 
-const NAME_TO_OP_MAP: Map<&'static str, CmdOp> = phf_map! {
-    "a" => CmdOp::Advance,
-    "j" => CmdOp::Jump,
-    "d" => CmdOp::DeleteChar,
-    "i" => CmdOp::InsertText,
-    "o" => CmdOp::OvertypeText,
-    "c" => CmdOp::InsertChar,
-    "l" => CmdOp::InsertLine,
-    "sl" => CmdOp::SplitLine,
-    "k" => CmdOp::DeleteLine,
-    "xa" => CmdOp::ExitAbort,
-    "xf" => CmdOp::ExitFailure,
-    "xs" => CmdOp::ExitSuccess,
-    "*u" => CmdOp::CaseUp,
-    "*l" => CmdOp::CaseLow,
-    "*e" => CmdOp::CaseEdit,
-};
-
-/// Map a command name string to its CmdOp.
-fn name_to_op(name: &str) -> Result<CmdOp> {
-    NAME_TO_OP_MAP.get(name)
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("Syntax error: unknown command '{}'.", name.to_uppercase()))
+macro_rules! lead_param_mask {
+    ($($kind:ident),* $(,)?) => {
+        {
+            0u8 $(| (1u8 << (LeadParamKind::$kind as u8)))*
+        }
+    };
 }
 
-/// Check whether a string is a known command name.
-fn is_known_command(name: &str) -> bool {
-    NAME_TO_OP_MAP.contains_key(name)
+
+/// Which kinds of leading parameter are accepted (used for validation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LeadParamKind {
+    None = 0,
+    Plus = 1,
+    Minus = 2,
+    Pint = 3,
+    Nint = 4,
+    Pindef = 5,
+    Nindef = 6,
+    Marker = 7,
+}
+
+fn lead_param_kind(lp: &LeadParam) -> LeadParamKind {
+    match lp {
+        LeadParam::None => LeadParamKind::None,
+        LeadParam::Plus => LeadParamKind::Plus,
+        LeadParam::Minus => LeadParamKind::Minus,
+        LeadParam::Pint(_) => LeadParamKind::Pint,
+        LeadParam::Nint(_) => LeadParamKind::Nint,
+        LeadParam::Pindef => LeadParamKind::Pindef,
+        LeadParam::Nindef => LeadParamKind::Nindef,
+        LeadParam::Marker(_) => LeadParamKind::Marker,
+    }
+}
+
+struct CmdInfo {
+    op: CmdOp,
+    allowed_leads: u8,
+    tpar_count: u8,
+}
+
+impl CmdInfo {
+    fn allows_lead(&self, kind: &LeadParamKind) -> bool {
+        (self.allowed_leads & (1u8 << (*kind as u8))) != 0
+    }
+}
+
+/// Map of command names to their CmdOp and parameter requirements.
+/// This table will be quite large.  Please keep names sorted alphabetically
+/// for readability.
+const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
+    "a" => CmdInfo {
+        op: CmdOp::Advance,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
+    "c" => CmdInfo {
+        op: CmdOp::InsertChar,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint),
+        tpar_count: 0
+    },
+    "d" => CmdInfo {
+        op: CmdOp::DeleteChar,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
+    "i" => CmdInfo {
+        op: CmdOp::InsertText,
+        allowed_leads: lead_param_mask!(None, Plus, Pint),
+        tpar_count: 1
+    },
+    "j" => CmdInfo {
+        op: CmdOp::Jump,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
+    "l" => CmdInfo {
+        op: CmdOp::InsertLine,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint),
+        tpar_count: 0
+    },
+    "k" => CmdInfo {
+        op: CmdOp::DeleteLine,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
+    "o" => CmdInfo {
+        op: CmdOp::OvertypeText,
+        allowed_leads: lead_param_mask!(None, Plus, Pint),
+        tpar_count: 1
+    },
+    "sl" => CmdInfo {
+        op: CmdOp::SplitLine,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "xa" => CmdInfo {
+        op: CmdOp::ExitAbort,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
+    "xf" => CmdInfo {
+        op: CmdOp::ExitFailure,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
+    "xs" => CmdInfo {
+        op: CmdOp::ExitSuccess,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
+    "*e" => CmdInfo {
+        op: CmdOp::CaseEdit,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
+        tpar_count: 0
+    },
+    "*l" => CmdInfo {
+        op: CmdOp::CaseLow,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
+        tpar_count: 0
+    },
+    "*u" => CmdInfo {
+        op: CmdOp::CaseUp,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
+        tpar_count: 0
+    },
+};
+
+/// Map a command name string to its CmdInfo.
+fn name_to_info(name: &str) -> Result<&'static CmdInfo> {
+    NAME_TO_OP_MAP.get(name)
+        .ok_or_else(|| anyhow::anyhow!("Syntax error: unknown command '{}'.", name.to_uppercase()))
 }
 
 /// Check if a character is valid in a command name.

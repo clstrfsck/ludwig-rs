@@ -1,9 +1,13 @@
+//! The Editor wraps a Frame and provides a high-level interface for executing
+//! compiled Ludwig commands.
+
 use std::fmt;
 
-use crate::frame::{CaseMode, EditCommands, MotionCommands};
-use crate::{CmdFailure, MarkId, code::*};
-use crate::{CmdResult, Frame, TrailParam};
+use crate::{MarkId, code::*};
+use crate::Frame;
+use crate::interpreter;
 
+/// An editor instance that wraps a Frame and provides command execution.
 pub struct Editor {
     frame: Frame,
 }
@@ -15,12 +19,14 @@ impl Default for Editor {
 }
 
 impl Editor {
+    /// Create a new empty editor.
     pub fn new() -> Self {
         Editor {
             frame: Frame::new(),
         }
     }
 
+    /// Create an editor from a string.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         Editor {
@@ -28,176 +34,27 @@ impl Editor {
         }
     }
 
+    /// Get a reference to the current frame.
     pub fn current_frame(&self) -> &Frame {
         &self.frame
     }
 
+    /// Get a mutable reference to the current frame.
     pub fn current_frame_mut(&mut self) -> &mut Frame {
         &mut self.frame
     }
 
+    /// Check if the frame has been modified.
     pub fn modified(&self) -> bool {
         self.frame.get_mark(MarkId::Modified).is_some()
     }
 
-    /// Execute compiled code. Top-level entry point.
+    /// Execute compiled code against the frame.
+    ///
+    /// This delegates to the interpreter module which handles all control flow,
+    /// exit handlers, and command dispatch.
     pub fn execute(&mut self, code: &CompiledCode) -> ExecOutcome {
-        for instr in &code.instructions {
-            let outcome = self.execute_instruction(instr);
-            match outcome {
-                ExecOutcome::Success => continue,
-                _ => return outcome,
-            }
-        }
-        ExecOutcome::Success
-    }
-
-    /// Execute a single instruction.
-    fn execute_instruction(&mut self, instr: &Instruction) -> ExecOutcome {
-        match instr {
-            Instruction::SimpleCmd {
-                op,
-                lead,
-                tpar,
-                exit_handler,
-            } => {
-                let result = self.dispatch_cmd(*op, *lead, tpar.as_ref());
-                let outcome = if result.is_success() {
-                    ExecOutcome::Success
-                } else {
-                    ExecOutcome::Failure
-                };
-                self.apply_exit_handler(outcome, exit_handler.as_ref())
-            }
-            Instruction::CompoundCmd {
-                repeat,
-                body,
-                exit_handler,
-            } => {
-                let outcome = self.execute_compound(*repeat, body);
-                self.apply_exit_handler(outcome, exit_handler.as_ref())
-            }
-            Instruction::ExitSuccess(levels) => match levels {
-                ExitLevels::Count(n) => ExecOutcome::ExitSuccess { remaining: *n },
-                ExitLevels::All => ExecOutcome::ExitSuccessAll,
-            },
-            Instruction::ExitFailure(levels) => match levels {
-                ExitLevels::Count(n) => ExecOutcome::ExitFailure { remaining: *n },
-                ExitLevels::All => ExecOutcome::ExitFailureAll,
-            },
-            Instruction::ExitAbort => ExecOutcome::Abort,
-        }
-    }
-
-    /// Execute a compound command body based on RepeatCount.
-    fn execute_compound(&mut self, repeat: RepeatCount, body: &CompiledCode) -> ExecOutcome {
-        match repeat {
-            RepeatCount::Once => {
-                let outcome = self.execute(body);
-                self.unwrap_exit_level(outcome)
-            }
-            RepeatCount::Times(n) => {
-                for _ in 0..n {
-                    let outcome = self.execute(body);
-                    let outcome = self.unwrap_exit_level(outcome);
-                    match outcome {
-                        ExecOutcome::Success => continue,
-                        _ => return outcome,
-                    }
-                }
-                ExecOutcome::Success
-            }
-            RepeatCount::Indefinite => loop {
-                let outcome = self.execute(body);
-                let outcome = self.unwrap_exit_level(outcome);
-                match outcome {
-                    ExecOutcome::Success => continue,
-                    other => return other,
-                }
-            },
-        }
-    }
-
-    /// Decrement exit level counters at a compound command boundary.
-    fn unwrap_exit_level(&self, outcome: ExecOutcome) -> ExecOutcome {
-        match outcome {
-            ExecOutcome::ExitSuccess { remaining } => {
-                if remaining <= 1 {
-                    ExecOutcome::Success
-                } else {
-                    ExecOutcome::ExitSuccess {
-                        remaining: remaining - 1,
-                    }
-                }
-            }
-            ExecOutcome::ExitFailure { remaining } => {
-                if remaining <= 1 {
-                    ExecOutcome::Failure
-                } else {
-                    ExecOutcome::ExitFailure {
-                        remaining: remaining - 1,
-                    }
-                }
-            }
-            other => other,
-        }
-    }
-
-    /// Apply an exit handler to an outcome, running success/failure code as appropriate.
-    fn apply_exit_handler(
-        &mut self,
-        outcome: ExecOutcome,
-        handler: Option<&ExitHandler>,
-    ) -> ExecOutcome {
-        let handler = match handler {
-            Some(h) => h,
-            None => return outcome,
-        };
-
-        match &outcome {
-            ExecOutcome::Success => {
-                if let Some(code) = &handler.on_success {
-                    self.execute(code)
-                } else {
-                    ExecOutcome::Success
-                }
-            }
-            ExecOutcome::Failure => {
-                if let Some(code) = &handler.on_failure {
-                    self.execute(code)
-                } else {
-                    ExecOutcome::Success
-                }
-            }
-            // XS/XF/XA/Abort propagate through handlers without triggering them
-            _ => outcome,
-        }
-    }
-
-    /// Dispatch a CmdOp to the appropriate Frame method.
-    fn dispatch_cmd(
-        &mut self,
-        op: CmdOp,
-        lead: crate::LeadParam,
-        tpar: Option<&TrailParam>,
-    ) -> CmdResult {
-        let frame = &mut self.frame;
-        match op {
-            CmdOp::Advance => frame.cmd_advance(lead),
-            CmdOp::Jump => frame.cmd_jump(lead),
-            CmdOp::DeleteChar => frame.cmd_delete_char(lead),
-            CmdOp::InsertText => frame.cmd_insert_text(lead, tpar.unwrap()),
-            CmdOp::OvertypeText => frame.cmd_overtype_text(lead, tpar.unwrap()),
-            CmdOp::InsertChar => frame.cmd_insert_char(lead),
-            CmdOp::InsertLine => frame.cmd_insert_line(lead),
-            CmdOp::SplitLine => frame.cmd_split_line(lead),
-            CmdOp::DeleteLine => frame.cmd_delete_line(lead),
-            CmdOp::CaseUp => frame.cmd_case_change(lead, CaseMode::Upper),
-            CmdOp::CaseLow => frame.cmd_case_change(lead, CaseMode::Lower),
-            CmdOp::CaseEdit => frame.cmd_case_change(lead, CaseMode::Edit),
-            // FIXME: remove this when everything is implemented
-            _ => CmdResult::Failure(CmdFailure::NotImplemented),
-        }
+        interpreter::execute(&mut self.frame, code)
     }
 }
 
