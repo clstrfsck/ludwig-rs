@@ -4,7 +4,7 @@
 //! them against a [`Frame`]. It handles control flow including compound commands with
 //! repetition, exit handlers, and exit level unwinding (XS/XF/XA).
 
-use crate::frame::{CaseMode, EditCommands, MotionCommands};
+use crate::frame::{CaseMode, EditCommands, MotionCommands, SearchCommands};
 use crate::{CmdFailure, CmdResult, Frame, LeadParam, TrailParam};
 use crate::code::*;
 
@@ -165,6 +165,8 @@ fn dispatch_cmd(
         CmdOp::CaseUp => frame.cmd_case_change(lead, CaseMode::Upper),
         CmdOp::CaseLow => frame.cmd_case_change(lead, CaseMode::Lower),
         CmdOp::CaseEdit => frame.cmd_case_change(lead, CaseMode::Edit),
+        CmdOp::Next => frame.cmd_next(lead, tpar.unwrap()),
+        CmdOp::Bridge => frame.cmd_bridge(lead, tpar.unwrap()),
         // FIXME: remove this when everything is implemented
         _ => CmdResult::Failure(CmdFailure::NotImplemented),
     }

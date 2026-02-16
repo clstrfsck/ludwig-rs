@@ -377,10 +377,20 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint),
         tpar_count: 0
     },
+    "br" => CmdInfo {
+        op: CmdOp::Bridge,
+        allowed_leads: lead_param_mask!(None, Plus, Minus),
+        tpar_count: 1
+    },
     "k" => CmdInfo {
         op: CmdOp::DeleteLine,
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
         tpar_count: 0
+    },
+    "n" => CmdInfo {
+        op: CmdOp::Next,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint),
+        tpar_count: 1
     },
     "o" => CmdInfo {
         op: CmdOp::OvertypeText,

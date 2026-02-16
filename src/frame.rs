@@ -2,9 +2,11 @@
 
 mod edit;
 mod motion;
+mod search;
 
 pub use edit::{CaseMode, EditCommands};
 pub use motion::MotionCommands;
+pub use search::SearchCommands;
 
 use std::fmt;
 

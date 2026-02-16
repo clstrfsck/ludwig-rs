@@ -10,6 +10,7 @@ use crate::position::Position;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MarkId {
     Dot,
+    Equals,
     Last,
     Modified,
     Numbered(u8),

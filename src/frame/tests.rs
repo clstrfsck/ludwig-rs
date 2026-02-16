@@ -3,6 +3,7 @@ use crate::lead_param::LeadParam;
 use crate::marks::MarkId;
 use crate::trail_param::TrailParam;
 use edit::CaseMode;
+use search::SearchCommands;
 
 #[test]
 fn test_calculate_insert_effect() {
@@ -1020,4 +1021,265 @@ fn delete_line_marker_before_dot() {
     assert!(result.is_success());
     assert_eq!(f.to_string(), "line1\nline3\nline4");
     assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+// ===== Next (N) command tests =====
+
+#[test]
+fn next_find_single_char_forward() {
+    let mut f = Frame::from_str("hello world");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("w"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 6));
+    // Equals mark set to original dot
+    assert_eq!(f.get_mark(MarkId::Equals), Some(Position::new(0, 0)));
+}
+
+#[test]
+fn next_find_char_from_set() {
+    let mut f = Frame::from_str("hello world");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("ow"));
+    assert!(result.is_success());
+    // Should find 'o' at position 4 (first occurrence of 'o' or 'w')
+    assert_eq!(f.dot(), Position::new(0, 4));
+}
+
+#[test]
+fn next_find_with_range() {
+    let mut f = Frame::from_str("abc123def");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("0..9"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 3)); // first digit '1'
+}
+
+#[test]
+fn next_find_nth_occurrence() {
+    let mut f = Frame::from_str("abracadabra");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_next(LeadParam::Pint(3), &TrailParam::from_str("a"));
+    assert!(result.is_success());
+    // 'a' at 0 (skipped, at dot), 1->col 3, 2->col 5, 3->col 7
+    assert_eq!(f.dot(), Position::new(0, 7));
+}
+
+#[test]
+fn next_skips_char_at_dot() {
+    let mut f = Frame::from_str("aaa");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("a"));
+    assert!(result.is_success());
+    // N skips the char at dot, finds next 'a'
+    assert_eq!(f.dot(), Position::new(0, 1));
+}
+
+#[test]
+fn next_not_found_fails() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("z"));
+    assert!(result.is_failure());
+    // Dot should not move on failure
+    assert_eq!(f.dot(), Position::new(0, 0));
+}
+
+#[test]
+fn next_crosses_lines() {
+    let mut f = Frame::from_str("hello\nworld");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("w"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+#[test]
+fn next_backward_single() {
+    let mut f = Frame::from_str("hello world");
+    f.set_dot(Position::new(0, 10));
+    let result = f.cmd_next(LeadParam::Minus, &TrailParam::from_str("o"));
+    assert!(result.is_success());
+    // Backward search finds 'o' at col 7, dot lands AFTER it at col 8
+    assert_eq!(f.dot(), Position::new(0, 8));
+}
+
+#[test]
+fn next_backward_skips_adjacent() {
+    // N backward skips the char immediately before dot
+    let mut f = Frame::from_str("abab");
+    f.set_dot(Position::new(0, 3)); // at 'b'
+    let result = f.cmd_next(LeadParam::Minus, &TrailParam::from_str("a"));
+    assert!(result.is_success());
+    // Backward: skip col 2 ('a' - but we skip one more), find 'a' at col 0
+    // Dot lands at col 0 + 1 = 1
+    assert_eq!(f.dot(), Position::new(0, 1));
+}
+
+#[test]
+fn next_backward_not_found_fails() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 2));
+    let result = f.cmd_next(LeadParam::Minus, &TrailParam::from_str("z"));
+    assert!(result.is_failure());
+    assert_eq!(f.dot(), Position::new(0, 2));
+}
+
+#[test]
+fn next_backward_nth() {
+    let mut f = Frame::from_str("abracadabra");
+    f.set_dot(Position::new(0, 10)); // at last 'a'
+    let result = f.cmd_next(LeadParam::Nint(2), &TrailParam::from_str("a"));
+    assert!(result.is_success());
+    // Backward from col 10: skip col 9 ('r'), find 'a' at col 7 (count 1),
+    //   skip to find 'a' at col 5 (count 2). Dot lands at col 5+1=6
+    assert_eq!(f.dot(), Position::new(0, 6));
+}
+
+#[test]
+fn next_rejects_pindef() {
+    let mut f = Frame::from_str("hello");
+    let result = f.cmd_next(LeadParam::Pindef, &TrailParam::from_str("h"));
+    assert!(result.is_failure());
+}
+
+#[test]
+fn next_zero_count_sets_equals() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_next(LeadParam::Pint(0), &TrailParam::from_str("h"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 3));
+    assert_eq!(f.get_mark(MarkId::Equals), Some(Position::new(0, 3)));
+}
+
+// ===== Bridge (BR) command tests =====
+
+#[test]
+fn bridge_skips_matching_chars() {
+    let mut f = Frame::from_str("   hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str(" "));
+    assert!(result.is_success());
+    // BR skips spaces, stops at first non-space 'h'
+    assert_eq!(f.dot(), Position::new(0, 3));
+    assert_eq!(f.get_mark(MarkId::Equals), Some(Position::new(0, 0)));
+}
+
+#[test]
+fn bridge_no_matching_chars_succeeds_without_moving() {
+    // If char at dot is NOT in the set, dot doesn't move and command succeeds
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str(" "));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 0));
+}
+
+#[test]
+fn bridge_all_matching_stops_at_eol() {
+    // All chars on line match, BR skips past them to EOL position
+    let mut f = Frame::from_str("aaa");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str("a"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 3)); // virtual space after last 'a'
+}
+
+#[test]
+fn bridge_with_range() {
+    let mut f = Frame::from_str("123abc");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str("0..9"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 3)); // stops at 'a'
+}
+
+#[test]
+fn bridge_backward() {
+    let mut f = Frame::from_str("abc   ");
+    f.set_dot(Position::new(0, 6)); // past end (virtual space)
+    let result = f.cmd_bridge(LeadParam::Minus, &TrailParam::from_str(" "));
+    assert!(result.is_success());
+    // Skips spaces backward, stops after 'c'
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+#[test]
+fn bridge_backward_at_start_succeeds() {
+    // Bridge backward at start of file succeeds
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_bridge(LeadParam::Minus, &TrailParam::from_str("a..z"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 0));
+}
+
+#[test]
+fn bridge_rejects_pint() {
+    let mut f = Frame::from_str("hello");
+    let result = f.cmd_bridge(LeadParam::Pint(3), &TrailParam::from_str("h"));
+    assert!(result.is_failure());
+}
+
+#[test]
+fn bridge_crosses_lines() {
+    let mut f = Frame::from_str("aaa\naab");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str("a"));
+    assert!(result.is_success());
+    // 'aaa' on line 0, space at EOL doesn't match 'a', so stops there
+    // Actually, EOL space: char_matches(' ', {'a'}, bridge=true) means
+    // we're checking if ' ' is NOT in {'a'} => true, so it's a match for BR
+    // Wait, that's wrong. For BR, char_matches checks !chars.contains.
+    // chars = {'a'}, bridge=true => we look for chars NOT in {'a'} => ' ' matches.
+    // So the EOL space IS a match. Dot should stop at col 3 (space at EOL).
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+// ===== Unicode tests =====
+
+#[test]
+fn next_finds_unicode_char() {
+    let mut f = Frame::from_str("hello wörld");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("ö"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 7));
+}
+
+#[test]
+fn next_unicode_range() {
+    // Range with unicode characters
+    let mut f = Frame::from_str("abc\u{00e0}\u{00e1}\u{00e2}def");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("\u{00e0}..\u{00e2}"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+#[test]
+fn bridge_skips_unicode_chars() {
+    let mut f = Frame::from_str("ääähello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str("ä"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 3));
+}
+
+// ===== N and BR as inverses =====
+
+#[test]
+fn next_then_bridge_round_trip() {
+    // N finds first digit, BR skips past all digits
+    let mut f = Frame::from_str("abc123def");
+    f.set_dot(Position::new(0, 0));
+    // Find first digit
+    let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("0..9"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 3));
+    // Now bridge over the digits
+    let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str("0..9"));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 6)); // at 'd'
 }
