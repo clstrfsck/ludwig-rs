@@ -16,7 +16,7 @@ pub enum Instruction {
     SimpleCmd {
         op: CmdOp,
         lead: LeadParam,
-        tpar: Option<TrailParam>,
+        tpars: Vec<TrailParam>,
         exit_handler: Option<ExitHandler>,
     },
     /// A parenthesized group: (cmds), N(cmds), >(cmds)

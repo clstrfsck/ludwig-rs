@@ -26,13 +26,16 @@ pub trait MotionCommands {
 
     /// Cursor down command (ZD).
     fn cmd_down(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Carriage return command (ZC).
+    fn cmd_return(&mut self, lead_param: LeadParam) -> CmdResult;
 }
 
 impl MotionCommands for Frame {
     fn cmd_advance(&mut self, lead_param: LeadParam) -> CmdResult {
         match lead_param {
-            LeadParam::None | LeadParam::Plus => self.advance_fwd(1),
-            LeadParam::Pint(n) => self.advance_fwd(n),
+            LeadParam::None | LeadParam::Plus => self.advance_fwd(1, false),
+            LeadParam::Pint(n) => self.advance_fwd(n, false),
             LeadParam::Pindef => self.advance_end(),
             LeadParam::Minus => self.advance_back(1),
             LeadParam::Nint(n) => self.advance_back(n),
@@ -165,18 +168,54 @@ impl MotionCommands for Frame {
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
         }
     }
+
+    fn cmd_return(&mut self, lead_param: LeadParam) -> CmdResult {
+        // ZC: Advance n lines, go to left margin (column 0).
+        // When on the last line, inserts a newline to extend the buffer.
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.return_fwd(1),
+            LeadParam::Pint(n) => self.return_fwd(n),
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
 }
 
 // Private implementation helpers for Advance
 impl Frame {
-    fn advance_fwd(&mut self, count: usize) -> CmdResult {
+    fn advance_fwd(&mut self, count: usize, allow_last: bool) -> CmdResult {
         let old_pos = self.dot();
         let new_line = old_pos.line + count;
-        // Can't advance to last blank line
-        if new_line + 1 >= self.lines() {
+        // Can't advance to last blank line if allow_last is false
+        let last_line = if allow_last {
+            new_line
+        } else {
+            new_line + 1
+        };
+        if last_line >= self.lines() && !allow_last {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
-        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_mark_at(MarkId::Equals, old_pos);
+        self.set_dot(Position::new(new_line, 0));
+        CmdResult::Success
+    }
+
+    fn return_fwd(&mut self, count: usize) -> CmdResult {
+        let old_pos = self.dot();
+        let new_line = old_pos.line + count;
+        let num_lines = self.lines();
+
+        // If target is beyond the buffer, insert newlines to extend it
+        if new_line >= num_lines {
+            let lines_to_add = new_line - num_lines + 1;
+            let last_line = num_lines.saturating_sub(1);
+            let last_line_len = line_length_excluding_newline(&self.rope, last_line);
+            self.insert_at(
+                Position::new(last_line, last_line_len),
+                &"\n".repeat(lines_to_add),
+            );
+        }
+
+        self.set_mark_at(MarkId::Equals, old_pos);
         self.set_dot(Position::new(new_line, 0));
         CmdResult::Success
     }
@@ -186,26 +225,26 @@ impl Frame {
         if old_pos.line < count {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
-        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_mark_at(MarkId::Equals, old_pos);
         self.set_dot(Position::new(old_pos.line.saturating_sub(count), 0));
         CmdResult::Success
     }
 
     fn advance_begin(&mut self) -> CmdResult {
-        self.set_mark_at(MarkId::Last, self.dot());
+        self.set_mark_at(MarkId::Equals, self.dot());
         self.set_dot(Position::new(0, 0));
         CmdResult::Success
     }
 
     fn advance_end(&mut self) -> CmdResult {
-        self.set_mark_at(MarkId::Last, self.dot());
+        self.set_mark_at(MarkId::Equals, self.dot());
         self.set_dot(Position::new(self.lines(), 0));
         CmdResult::Success
     }
 
     fn advance_to(&mut self, target: Option<Position>) -> CmdResult {
         if let Some(pos) = target {
-            self.set_mark_at(MarkId::Last, self.dot());
+            self.set_mark_at(MarkId::Equals, self.dot());
             self.set_dot(Position::new(pos.line, 0));
             CmdResult::Success
         } else {
@@ -218,7 +257,7 @@ impl Frame {
 impl Frame {
     fn jump_fwd(&mut self, count: usize) -> CmdResult {
         let old_pos = self.dot();
-        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_mark_at(MarkId::Equals, old_pos);
         self.set_dot(Position::new(old_pos.line, old_pos.column + count));
         CmdResult::Success
     }
@@ -228,7 +267,7 @@ impl Frame {
         if old_pos.column < count {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
-        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_mark_at(MarkId::Equals, old_pos);
         self.set_dot(Position::new(
             old_pos.line,
             old_pos.column.saturating_sub(count),
@@ -238,7 +277,7 @@ impl Frame {
 
     fn jump_begin(&mut self) -> CmdResult {
         let old_pos = self.dot();
-        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_mark_at(MarkId::Equals, old_pos);
         self.set_dot(Position::new(old_pos.line, 0));
         CmdResult::Success
     }
@@ -249,14 +288,14 @@ impl Frame {
         if line_len < old_pos.column {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
-        self.set_mark_at(MarkId::Last, old_pos);
+        self.set_mark_at(MarkId::Equals, old_pos);
         self.set_dot(Position::new(old_pos.line, line_len));
         CmdResult::Success
     }
 
     fn jump_to(&mut self, target: Option<Position>) -> CmdResult {
         if let Some(pos) = target {
-            self.set_mark_at(MarkId::Last, self.dot());
+            self.set_mark_at(MarkId::Equals, self.dot());
             self.set_dot(pos);
             CmdResult::Success
         } else {

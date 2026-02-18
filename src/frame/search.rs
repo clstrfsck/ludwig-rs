@@ -17,6 +17,18 @@ pub trait SearchCommands {
 
     /// Bridge command (BR): skip over consecutive occurrences of characters in a set.
     fn cmd_bridge(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult;
+
+    /// Replace command (R): find and replace literal text.
+    fn cmd_replace(
+        &mut self,
+        lead_param: LeadParam,
+        search: &TrailParam,
+        replace: &TrailParam,
+    ) -> CmdResult;
+
+    /// Get (Search) command (G): search for literal text.
+    /// On success: dot → after match, Equals → start of match.
+    fn cmd_get(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult;
 }
 
 impl SearchCommands for Frame {
@@ -38,6 +50,117 @@ impl SearchCommands for Frame {
             _ => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
         self.nextbridge(count, tpar, true)
+    }
+
+    fn cmd_replace(
+        &mut self,
+        lead_param: LeadParam,
+        search: &TrailParam,
+        replace: &TrailParam,
+    ) -> CmdResult {
+        // Determine count and direction
+        let (count, replace_all) = match lead_param {
+            LeadParam::None | LeadParam::Plus => (1isize, false),
+            LeadParam::Pint(n) => (n as isize, false),
+            LeadParam::Minus => (-1, false),
+            LeadParam::Nint(n) => (-(n as isize), false),
+            LeadParam::Pindef => (1, true),   // >R: replace all forward
+            LeadParam::Nindef => (-1, true),  // <R: replace all backward
+            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        if search.str.is_empty() {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
+        }
+
+        // Case sensitivity: / = insensitive, " = exact, others = insensitive
+        let case_sensitive = search.dlm == '"';
+
+        let original_dot = self.dot();
+        let mut replacements = 0usize;
+
+        if replace_all {
+            // Replace all occurrences
+            loop {
+                let found = if count > 0 {
+                    self.find_literal_forward(&search.str, case_sensitive)
+                } else {
+                    self.find_literal_backward(&search.str, case_sensitive)
+                };
+                match found {
+                    Some((start, end)) => {
+                        self.do_replace(start, end, &replace.str);
+                        replacements += 1;
+                    }
+                    None => break,
+                }
+            }
+        } else {
+            // Replace count occurrences
+            let abs_count = count.unsigned_abs();
+            for _ in 0..abs_count {
+                let found = if count > 0 {
+                    self.find_literal_forward(&search.str, case_sensitive)
+                } else {
+                    self.find_literal_backward(&search.str, case_sensitive)
+                };
+                match found {
+                    Some((start, end)) => {
+                        self.do_replace(start, end, &replace.str);
+                        replacements += 1;
+                    }
+                    None => {
+                        if replacements == 0 {
+                            return CmdResult::Failure(CmdFailure::OutOfRange);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if replacements > 0 {
+            self.set_mark(MarkId::Modified);
+            self.set_mark_at(MarkId::Equals, original_dot);
+            CmdResult::Success
+        } else {
+            CmdResult::Failure(CmdFailure::OutOfRange)
+        }
+    }
+
+    fn cmd_get(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
+        let (count, forward) = match lead_param {
+            LeadParam::None | LeadParam::Plus => (1usize, true),
+            LeadParam::Pint(n) => (n, true),
+            LeadParam::Minus => (1, false),
+            LeadParam::Nint(n) => (n, false),
+            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        if tpar.str.is_empty() {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
+        }
+
+        let case_sensitive = tpar.dlm == '"';
+
+        for _ in 0..count {
+            let found = if forward {
+                self.find_literal_forward(&tpar.str, case_sensitive)
+            } else {
+                self.find_literal_backward(&tpar.str, case_sensitive)
+            };
+            match found {
+                Some((new_equals, new_dot)) => {
+                    self.set_mark_at(MarkId::Equals, new_equals);
+                    self.set_dot(new_dot);
+                }
+                None => {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+            }
+        }
+
+        CmdResult::Success
     }
 }
 
@@ -270,6 +393,119 @@ impl Frame {
             let prev_line_len = line_length_excluding_newline(&self.rope, line);
             col = prev_line_len as isize - 1;
         }
+    }
+}
+
+// Private helpers for Replace command
+impl Frame {
+    /// Search forward from dot for a literal string.
+    /// Returns (start_position, end_position) of match.
+    /// Dot is NOT moved by this method — the caller handles positioning.
+    fn find_literal_forward(
+        &self,
+        pattern: &str,
+        case_sensitive: bool,
+    ) -> Option<(Position, Position)> {
+        let dot = self.dot();
+        let num_lines = self.lines();
+        let pat_chars: Vec<char> = pattern.chars().collect();
+        let pat_len = pat_chars.len();
+
+        if pat_len == 0 {
+            return None;
+        }
+
+        let mut line = dot.line;
+        let mut col = dot.column;
+
+        while line < num_lines {
+            let line_len = line_length_excluding_newline(&self.rope, line);
+            let line_start = self.rope.line_to_char(line);
+
+            while col + pat_len <= line_len {
+                if self.matches_at_pos(line_start + col, &pat_chars, case_sensitive) {
+                    return Some((
+                        Position::new(line, col),
+                        Position::new(line, col + pat_len),
+                    ));
+                }
+                col += 1;
+            }
+            line += 1;
+            col = 0;
+        }
+        None
+    }
+
+    /// Search backward from dot for a literal string.
+    /// Returns (end_position, start_position) of match.
+    fn find_literal_backward(
+        &self,
+        pattern: &str,
+        case_sensitive: bool,
+    ) -> Option<(Position, Position)> {
+        let dot = self.dot();
+        let pat_chars: Vec<char> = pattern.chars().collect();
+        let pat_len = pat_chars.len();
+
+        if pat_len == 0 {
+            return None;
+        }
+
+        let mut line = dot.line;
+        let line_len = line_length_excluding_newline(&self.rope, line);
+        // Start searching from one position before dot (or end of line if dot is beyond)
+        let effective_col = dot.column.min(line_len);
+        let mut col = effective_col.saturating_sub(1) as isize;
+
+        loop {
+            let line_len = line_length_excluding_newline(&self.rope, line);
+            let line_start = self.rope.line_to_char(line);
+
+            while col >= 0 {
+                let c = col as usize;
+                if c + pat_len <= line_len
+                    && self.matches_at_pos(line_start + c, &pat_chars, case_sensitive)
+                {
+                    return Some((
+                        Position::new(line, c + pat_len),
+                        Position::new(line, c),
+                    ));
+                }
+                col -= 1;
+            }
+
+            if line == 0 {
+                return None;
+            }
+            line -= 1;
+            let prev_line_len = line_length_excluding_newline(&self.rope, line);
+            col = prev_line_len.saturating_sub(1) as isize;
+        }
+    }
+
+    /// Check if pattern matches at a specific char index in the rope.
+    fn matches_at_pos(&self, char_idx: usize, pat_chars: &[char], case_sensitive: bool) -> bool {
+        for (i, &pc) in pat_chars.iter().enumerate() {
+            let rc = self.rope.char(char_idx + i);
+            if case_sensitive {
+                if rc != pc {
+                    return false;
+                }
+            } else if rc.to_ascii_lowercase() != pc.to_ascii_lowercase() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Perform a replacement: delete from start to end, insert replacement text.
+    /// Dot ends up after the replacement text.
+    fn do_replace(&mut self, start: Position, end: Position, replacement: &str) {
+        // Move dot to start, delete the matched text, insert replacement
+        self.set_dot(start);
+        self.delete(start, end);
+        self.insert(replacement);
     }
 }
 

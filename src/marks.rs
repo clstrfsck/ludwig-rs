@@ -11,7 +11,6 @@ use crate::position::Position;
 pub enum MarkId {
     Dot,
     Equals,
-    Last,
     Modified,
     Numbered(u8),
 }

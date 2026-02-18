@@ -2,11 +2,15 @@
 
 mod edit;
 mod motion;
+mod predicate;
 mod search;
+mod word;
 
 pub use edit::{CaseMode, EditCommands};
 pub use motion::MotionCommands;
+pub use predicate::PredicateCommands;
 pub use search::SearchCommands;
+pub use word::WordCommands;
 
 use std::fmt;
 

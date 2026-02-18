@@ -4,7 +4,7 @@
 //! them against a [`Frame`]. It handles control flow including compound commands with
 //! repetition, exit handlers, and exit level unwinding (XS/XF/XA).
 
-use crate::frame::{CaseMode, EditCommands, MotionCommands, SearchCommands};
+use crate::frame::{CaseMode, EditCommands, MotionCommands, PredicateCommands, SearchCommands, WordCommands};
 use crate::{CmdFailure, CmdResult, Frame, LeadParam, TrailParam};
 use crate::code::*;
 
@@ -29,10 +29,10 @@ fn execute_instruction(frame: &mut Frame, instr: &Instruction) -> ExecOutcome {
         Instruction::SimpleCmd {
             op,
             lead,
-            tpar,
+            tpars,
             exit_handler,
         } => {
-            let result = dispatch_cmd(frame, *op, *lead, tpar.as_ref());
+            let result = dispatch_cmd(frame, *op, *lead, tpars);
             let outcome = if result.is_success() {
                 ExecOutcome::Success
             } else {
@@ -150,14 +150,14 @@ fn dispatch_cmd(
     frame: &mut Frame,
     op: CmdOp,
     lead: LeadParam,
-    tpar: Option<&TrailParam>,
+    tpars: &[TrailParam],
 ) -> CmdResult {
     match op {
         CmdOp::Advance => frame.cmd_advance(lead),
         CmdOp::Jump => frame.cmd_jump(lead),
         CmdOp::DeleteChar => frame.cmd_delete_char(lead),
-        CmdOp::InsertText => frame.cmd_insert_text(lead, tpar.unwrap()),
-        CmdOp::OvertypeText => frame.cmd_overtype_text(lead, tpar.unwrap()),
+        CmdOp::InsertText => frame.cmd_insert_text(lead, &tpars[0]),
+        CmdOp::OvertypeText => frame.cmd_overtype_text(lead, &tpars[0]),
         CmdOp::InsertChar => frame.cmd_insert_char(lead),
         CmdOp::InsertLine => frame.cmd_insert_line(lead),
         CmdOp::SplitLine => frame.cmd_split_line(lead),
@@ -165,12 +165,27 @@ fn dispatch_cmd(
         CmdOp::CaseUp => frame.cmd_case_change(lead, CaseMode::Upper),
         CmdOp::CaseLow => frame.cmd_case_change(lead, CaseMode::Lower),
         CmdOp::CaseEdit => frame.cmd_case_change(lead, CaseMode::Edit),
-        CmdOp::Next => frame.cmd_next(lead, tpar.unwrap()),
-        CmdOp::Bridge => frame.cmd_bridge(lead, tpar.unwrap()),
+        CmdOp::Next => frame.cmd_next(lead, &tpars[0]),
+        CmdOp::Bridge => frame.cmd_bridge(lead, &tpars[0]),
         CmdOp::Left => frame.cmd_left(lead),
         CmdOp::Right => frame.cmd_right(lead),
         CmdOp::Up => frame.cmd_up(lead),
         CmdOp::Down => frame.cmd_down(lead),
+        CmdOp::Return => frame.cmd_return(lead),
+        CmdOp::Rubout => frame.cmd_rubout(lead),
+        CmdOp::EqualEol => frame.cmd_eol(lead),
+        CmdOp::EqualEop => frame.cmd_eop(lead),
+        CmdOp::EqualEof => frame.cmd_eof(lead),
+        CmdOp::EqualColumn => frame.cmd_eqc(lead, &tpars[0]),
+        CmdOp::EqualMark => frame.cmd_eqm(lead, &tpars[0]),
+        CmdOp::EqualString => frame.cmd_eqs(lead, &tpars[0]),
+        CmdOp::Mark => frame.cmd_mark(lead),
+        CmdOp::Replace => frame.cmd_replace(lead, &tpars[0], &tpars[1]),
+        CmdOp::SwapLine => frame.cmd_swap_line(lead),
+        CmdOp::Get => frame.cmd_get(lead, &tpars[0]),
+        CmdOp::WordAdvance => frame.cmd_word_advance(lead),
+        CmdOp::DittoUp => frame.cmd_ditto_up(lead),
+        CmdOp::DittoDown => frame.cmd_ditto_down(lead),
         // FIXME: remove this when everything is implemented
         _ => CmdResult::Failure(CmdFailure::NotImplemented),
     }

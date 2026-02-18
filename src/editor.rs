@@ -276,4 +276,356 @@ mod tests {
         // XS at top level becomes ExitSuccess{1} which has no compound to catch it
         assert_eq!(outcome, ExecOutcome::ExitSuccess { remaining: 1 });
     }
+
+    #[test]
+    fn test_eol_at_end_of_line() {
+        let (_, outcome) = exec("hello\n", "5JEOL");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eol_not_at_end() {
+        let (_, outcome) = exec("hello\n", "EOL");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_eol_inverted() {
+        let (_, outcome) = exec("hello\n", "-EOL");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eol_inverted_at_end() {
+        let (_, outcome) = exec("hello\n", "5J-EOL");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_eop_at_end() {
+        // >A advances to the end (null line)
+        let (_, outcome) = exec("hello\n", ">AEOP");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eop_not_at_end() {
+        let (_, outcome) = exec("hello\nworld\n", "EOP");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_eop_inverted() {
+        let (_, outcome) = exec("hello\nworld\n", "-EOP");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eof_same_as_eop() {
+        let (_, outcome) = exec("hello\n", ">AEOF");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqc_equal() {
+        // Dot is at column 0 (1-based = 1)
+        let (_, outcome) = exec("hello\n", "EQC'1'");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqc_not_equal() {
+        let (_, outcome) = exec("hello\n", "EQC'5'");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_eqc_inverted() {
+        let (_, outcome) = exec("hello\n", "-EQC'5'");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqc_greater_or_equal() {
+        // Dot at column 3 (1-based=4), test >=3 (1-based)
+        let (_, outcome) = exec("hello\n", "3J>EQC'3'");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqc_less_or_equal() {
+        let (_, outcome) = exec("hello\n", "<EQC'3'");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqs_match_case_insensitive() {
+        let (_, outcome) = exec("Hello\n", "EQS/hello/");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqs_match_exact_case() {
+        let (_, outcome) = exec("Hello\n", r#"EQS"Hello""#);
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqs_no_match_exact_case() {
+        let (_, outcome) = exec("Hello\n", r#"EQS"hello""#);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_eqs_inverted() {
+        let (_, outcome) = exec("Hello\n", "-EQS/world/");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqs_partial_match() {
+        let (_, outcome) = exec("Hello World\n", "EQS/hello w/");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_mark_set_and_eqm() {
+        // Set mark 1 at dot (0,0), advance, then test EQM
+        let (_, outcome) = exec("hello\nworld\n", "M A EQM'1'");
+        // After M: mark1=(0,0), after A: dot=(1,0), EQM'1' tests dot==(0,0) → false
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_mark_set_and_eqm_equal() {
+        // Set mark, don't move, test equals
+        let (_, outcome) = exec("hello\n", "M EQM'1'");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_mark_set_numbered() {
+        // Set mark 3, test against it
+        let (_, outcome) = exec("hello\n", "3M EQM'3'");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_mark_unset() {
+        // Set mark 1, then unset it, then test — should fail (mark not defined)
+        let (_, outcome) = exec("hello\n", "M -M EQM'1'");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_eqm_inverted() {
+        // Set mark 1, advance, -EQM should succeed (dot != mark)
+        let (_, outcome) = exec("hello\nworld\n", "M A -EQM'1'");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqm_greater_or_equal() {
+        // Set mark at (0,0), advance to (1,0), >EQM → dot >= mark → true
+        let (_, outcome) = exec("hello\nworld\n", "M A >EQM'1'");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_eqm_less_or_equal() {
+        // Set mark at (0,0), don't advance, <EQM → dot <= mark → true
+        let (_, outcome) = exec("hello\nworld\n", "M <EQM'1'");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_predicate_in_loop() {
+        // Use EOL in a loop to advance to end of line
+        let (editor, outcome) = exec("hello\n", ">(-EOL J)");
+        assert_eq!(outcome, ExecOutcome::Failure);
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 5));
+    }
+
+    #[test]
+    fn test_replace_simple() {
+        let (editor, outcome) = exec("hello world\n", "R/world/earth/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello earth\n");
+    }
+
+    #[test]
+    fn test_replace_not_found() {
+        let (_, outcome) = exec("hello world\n", "R/xyz/abc/");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_replace_case_insensitive() {
+        let (editor, outcome) = exec("Hello World\n", "R/hello/goodbye/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "goodbye World\n");
+    }
+
+    #[test]
+    fn test_replace_case_sensitive() {
+        let (_, outcome) = exec("Hello World\n", r#"R"hello"goodbye""#);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_replace_case_sensitive_match() {
+        let (editor, outcome) = exec("Hello World\n", r#"R"Hello"Goodbye""#);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "Goodbye World\n");
+    }
+
+    #[test]
+    fn test_replace_multiple() {
+        let (editor, outcome) = exec("aaa bbb aaa\n", "2R/aaa/ccc/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "ccc bbb ccc\n");
+    }
+
+    #[test]
+    fn test_replace_all() {
+        let (editor, outcome) = exec("aa bb aa bb aa\n", ">R/aa/cc/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "cc bb cc bb cc\n");
+    }
+
+    #[test]
+    fn test_replace_with_empty() {
+        let (editor, outcome) = exec("hello world\n", "R/world//");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello \n");
+    }
+
+    #[test]
+    fn test_replace_with_longer() {
+        let (editor, outcome) = exec("hi\n", "R/hi/hello world/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello world\n");
+    }
+
+    #[test]
+    fn test_swap_line_default() {
+        let (editor, outcome) = exec("line1\nline2\nline3\n", "SW");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "line2\nline1\nline3\n");
+        // Dot follows original line (line1 moved to line 1)
+        assert_eq!(editor.current_frame().dot(), Position::new(1, 0));
+    }
+
+    #[test]
+    fn test_swap_line_backward() {
+        let (editor, outcome) = exec("line1\nline2\nline3\n", "A-SW");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "line2\nline1\nline3\n");
+        // Dot was on line 1 (line2), after -SW it's now on line 0
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 0));
+    }
+
+    #[test]
+    fn test_swap_line_at_last_fails() {
+        // Can't swap when on the last content line (no line below except null)
+        let (_, outcome) = exec("line1\nline2\n", "ASW");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_swap_line_n_positions() {
+        let (editor, outcome) = exec("line1\nline2\nline3\nline4\n", "2SW");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "line2\nline3\nline1\nline4\n");
+        assert_eq!(editor.current_frame().dot(), Position::new(2, 0));
+    }
+
+    #[test]
+    fn test_get_forward() {
+        let (editor, outcome) = exec("hello world\n", "G/world/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Dot → after "world" (col 11), Equals → start of "world" (col 6)
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 11));
+        assert_eq!(
+            editor.current_frame().get_mark(MarkId::Equals),
+            Some(Position::new(0, 6))
+        );
+    }
+
+    #[test]
+    fn test_get_not_found() {
+        let (_, outcome) = exec("hello world\n", "G/xyz/");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_get_case_insensitive() {
+        let (editor, outcome) = exec("Hello World\n", "G/hello/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 5));
+    }
+
+    #[test]
+    fn test_get_case_sensitive() {
+        let (_, outcome) = exec("Hello World\n", r#"G"hello""#);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_get_nth_occurrence() {
+        let (editor, outcome) = exec("aa bb aa bb\n", "2G/aa/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Second "aa" is at col 6-8
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 8));
+    }
+
+    #[test]
+    fn test_get_backward() {
+        let (editor, outcome) = exec("hello world hello\n", ">J-G/hello/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Searching backward from col 17, finds "hello" at col 12
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 12));
+        assert_eq!(
+            editor.current_frame().get_mark(MarkId::Equals),
+            Some(Position::new(0, 17))
+        );
+    }
+
+    #[test]
+    fn test_word_advance_forward() {
+        let (editor, outcome) = exec("hello world test\n", "YA");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 6));
+    }
+
+    #[test]
+    fn test_word_advance_n() {
+        let (editor, outcome) = exec("hello world test\n", "2YA");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 12));
+    }
+
+    #[test]
+    fn test_word_advance_current() {
+        // Move to middle of word, then 0YA to start of word
+        let (editor, outcome) = exec("hello world\n", "3J 0YA");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 0));
+    }
+
+    #[test]
+    fn test_word_advance_backward() {
+        let (editor, outcome) = exec("hello world test\n", ">J -YA");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 6));
+    }
+
+    #[test]
+    fn test_get_then_replace_at_match() {
+        // Use G to find text, then use Equals mark for delete
+        let (editor, outcome) = exec("hello world\n", "G/world/ =D");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // G finds "world", dot=11, Equals=6. =D deletes from dot to Equals mark.
+        assert_eq!(editor.to_string(), "hello \n");
+    }
 }

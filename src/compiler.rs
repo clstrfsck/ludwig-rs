@@ -131,19 +131,25 @@ impl Compiler<'_> {
             bail!("Syntax error.");
         }
 
-        // Parse trailing parameter if needed
-        let tpar = if cmd.tpar_count > 0 {
-            Some(self.parse_trailing_param()?)
-        } else {
-            None
-        };
+        // Parse trailing parameters if needed.
+        // For multi-tpar commands (like R/search/replace/), all tpars share the
+        // same delimiter: delim text1 delim text2 delim ...
+        let mut tpars = Vec::new();
+        if cmd.tpar_count > 0 {
+            let first = self.parse_trailing_param()?;
+            let delim = first.dlm;
+            tpars.push(first);
+            for _ in 1..cmd.tpar_count {
+                tpars.push(self.parse_trailing_param_with_delim(delim)?);
+            }
+        }
 
         let exit_handler = self.parse_exit_handler()?;
 
         Ok(Instruction::SimpleCmd {
             op: cmd.op,
             lead,
-            tpar,
+            tpars,
             exit_handler,
         })
     }
@@ -215,7 +221,7 @@ impl Compiler<'_> {
                 }
                 Ok(LeadParam::Marker(MarkId::Numbered(id)))
             }
-            s if s.starts_with('=') => Ok(LeadParam::Marker(MarkId::Last)),
+            s if s.starts_with('=') => Ok(LeadParam::Marker(MarkId::Equals)),
             s if s.starts_with('%') => Ok(LeadParam::Marker(MarkId::Modified)),
             s if s.starts_with('+') => {
                 let num = s[1..].parse::<usize>()?;
@@ -262,6 +268,11 @@ impl Compiler<'_> {
             Some(c) if c.is_ascii_punctuation() => c,
             _ => bail!("Syntax error: expected trailing parameter delimiter."),
         };
+        self.parse_trailing_param_with_delim(delim)
+    }
+
+    /// Parse a trailing parameter using a known delimiter.
+    fn parse_trailing_param_with_delim(&mut self, delim: char) -> Result<TrailParam> {
         let mut content = String::new();
         loop {
             match self.chars.next() {
@@ -362,6 +373,11 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
         tpar_count: 0
     },
+    "g" => CmdInfo {
+        op: CmdOp::Get,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint),
+        tpar_count: 1
+    },
     "i" => CmdInfo {
         op: CmdOp::InsertText,
         allowed_leads: lead_param_mask!(None, Plus, Pint),
@@ -382,9 +398,44 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus),
         tpar_count: 1
     },
+    "eol" => CmdInfo {
+        op: CmdOp::EqualEol,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pindef, Nindef),
+        tpar_count: 0
+    },
+    "eop" => CmdInfo {
+        op: CmdOp::EqualEop,
+        allowed_leads: lead_param_mask!(None, Plus, Minus),
+        tpar_count: 0
+    },
+    "eof" => CmdInfo {
+        op: CmdOp::EqualEof,
+        allowed_leads: lead_param_mask!(None, Plus, Minus),
+        tpar_count: 0
+    },
+    "eqc" => CmdInfo {
+        op: CmdOp::EqualColumn,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pindef, Nindef),
+        tpar_count: 1
+    },
+    "eqm" => CmdInfo {
+        op: CmdOp::EqualMark,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pindef, Nindef),
+        tpar_count: 1
+    },
+    "eqs" => CmdInfo {
+        op: CmdOp::EqualString,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pindef, Nindef),
+        tpar_count: 1
+    },
     "k" => CmdInfo {
         op: CmdOp::DeleteLine,
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
+    "m" => CmdInfo {
+        op: CmdOp::Mark,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint),
         tpar_count: 0
     },
     "n" => CmdInfo {
@@ -397,9 +448,24 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Pint),
         tpar_count: 1
     },
+    "r" => CmdInfo {
+        op: CmdOp::Replace,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
+        tpar_count: 2
+    },
+    "sw" => CmdInfo {
+        op: CmdOp::SwapLine,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
     "sl" => CmdInfo {
         op: CmdOp::SplitLine,
         allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "ya" => CmdInfo {
+        op: CmdOp::WordAdvance,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
         tpar_count: 0
     },
     "xa" => CmdInfo {
@@ -432,9 +498,29 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
         tpar_count: 0
     },
+    "zc" => CmdInfo {
+        op: CmdOp::Return,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
+        tpar_count: 0
+    },
     "zu" => CmdInfo {
         op: CmdOp::Up,
         allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "zz" => CmdInfo {
+        op: CmdOp::Rubout,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "\"" => CmdInfo {
+        op: CmdOp::DittoUp,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
+        tpar_count: 0
+    },
+    "'" => CmdInfo {
+        op: CmdOp::DittoDown,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
         tpar_count: 0
     },
     "*e" => CmdInfo {
@@ -488,12 +574,12 @@ mod tests {
             Instruction::SimpleCmd {
                 op,
                 lead,
-                tpar,
+                tpars,
                 exit_handler,
             } => {
                 assert_eq!(*op, CmdOp::Advance);
                 assert_eq!(*lead, LeadParam::None);
-                assert!(tpar.is_none());
+                assert!(tpars.is_empty());
                 assert!(exit_handler.is_none());
             }
             _ => panic!("expected SimpleCmd"),
@@ -548,11 +634,11 @@ mod tests {
     fn test_insert_trailing_param() {
         let instrs = compile_ok("I/hello/");
         match &instrs[0] {
-            Instruction::SimpleCmd { op, tpar, .. } => {
+            Instruction::SimpleCmd { op, tpars, .. } => {
                 assert_eq!(*op, CmdOp::InsertText);
-                let tp = tpar.as_ref().unwrap();
-                assert_eq!(tp.dlm, '/');
-                assert_eq!(tp.str, "hello");
+                assert_eq!(tpars.len(), 1);
+                assert_eq!(tpars[0].dlm, '/');
+                assert_eq!(tpars[0].str, "hello");
             }
             _ => panic!("expected SimpleCmd"),
         }
@@ -562,10 +648,10 @@ mod tests {
     fn test_insert_with_count() {
         let instrs = compile_ok("3I'world'");
         match &instrs[0] {
-            Instruction::SimpleCmd { op, lead, tpar, .. } => {
+            Instruction::SimpleCmd { op, lead, tpars, .. } => {
                 assert_eq!(*op, CmdOp::InsertText);
                 assert_eq!(*lead, LeadParam::Pint(3));
-                assert_eq!(tpar.as_ref().unwrap().str, "world");
+                assert_eq!(tpars[0].str, "world");
             }
             _ => panic!("expected SimpleCmd"),
         }

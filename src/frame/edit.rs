@@ -41,6 +41,12 @@ pub trait EditCommands {
 
     /// Delete (kill) line(s) command (K).
     fn cmd_delete_line(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Rubout (backspace) command (ZZ).
+    fn cmd_rubout(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Swap line command (SW).
+    fn cmd_swap_line(&mut self, lead_param: LeadParam) -> CmdResult;
 }
 
 impl EditCommands for Frame {
@@ -102,7 +108,7 @@ impl EditCommands for Frame {
             self.set_dot(clamped_dot);
             self.insert_at(Position::new(clamped_dot.line, clamped_dot.column), "\n");
             self.set_mark(MarkId::Modified);
-            self.set_mark_at(MarkId::Last, original_dot);
+            self.set_mark_at(MarkId::Equals, original_dot);
             CmdResult::Success
         } else {
             CmdResult::Failure(CmdFailure::SyntaxError)
@@ -124,6 +130,17 @@ impl EditCommands for Frame {
                 let count = self.dot().column;
                 self.case_change_backward(count, mode)
             }
+            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+        }
+    }
+
+    fn cmd_rubout(&mut self, lead_param: LeadParam) -> CmdResult {
+        // ZZ: Delete the character to the left of Dot (backspace).
+        // Insert mode behavior: equivalent to -J D (move back, delete forward).
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.cmd_del_backward(1),
+            LeadParam::Pint(n) => self.cmd_del_backward(n),
+            LeadParam::Pindef => self.cmd_del_backward(self.dot().column),
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
         }
     }
@@ -195,6 +212,69 @@ impl EditCommands for Frame {
             }
         }
     }
+
+    fn cmd_swap_line(&mut self, lead_param: LeadParam) -> CmdResult {
+        let dot = self.dot();
+        let num_lines = self.lines();
+        let (source_line, dest_line) = match lead_param {
+            LeadParam::None | LeadParam::Plus => {
+                // SW: move current line after line below
+                if dot.line + 2 >= num_lines {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                (dot.line, dot.line + 1)
+            }
+            LeadParam::Pint(n) => {
+                // nSW: move current line N positions down
+                if dot.line + n + 1 >= num_lines {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                (dot.line, dot.line + n)
+            }
+            LeadParam::Minus => {
+                // -SW: move current line before line above
+                if dot.line == 0 {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                (dot.line, dot.line - 1)
+            }
+            LeadParam::Nint(n) => {
+                // -nSW: move current line N positions up
+                if n > dot.line {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                (dot.line, dot.line - n)
+            }
+            LeadParam::Nindef => {
+                // <SW: move current line to the top
+                (dot.line, 0)
+            }
+            LeadParam::Pindef => {
+                // >SW: move current line to the bottom
+                (dot.line, num_lines - 1)
+            }
+            LeadParam::Marker(id) => {
+                // @SW: move current line to the position of mark m
+                if let Some(mark_pos) = self.mark_position(id) {
+                    (dot.line, mark_pos.line)
+                } else {
+                    return CmdResult::Failure(CmdFailure::MarkNotDefined);
+                }
+            }
+        };
+        if source_line == dest_line {
+            // No-op if trying to swap the same line
+            return CmdResult::Success;
+        }
+        self.move_line(source_line, dest_line);
+        let original_dot = dot;
+        // After swap, dot follows the original line's new position
+        self.set_dot(Position::new(dest_line, dot.column));
+        // FIXME: Need to adjust marks
+        self.set_mark(MarkId::Modified);
+        self.set_mark_at(MarkId::Equals, original_dot);
+        CmdResult::Success
+    }
 }
 
 // Private implementation helpers for insertion
@@ -207,7 +287,7 @@ impl Frame {
         let insert_pos = Position::new(original_dot.line, 0);
         self.insert_at(insert_pos, &"\n".repeat(count));
         self.set_mark(MarkId::Modified);
-        self.set_mark_at(MarkId::Last, original_dot);
+        self.set_mark_at(MarkId::Equals, original_dot);
         if !move_dot {
             // After insert_at, dot has been shifted down by count lines.
             // Reset it to the original position (now an empty inserted line).
@@ -223,7 +303,7 @@ impl Frame {
         let original_dot = self.dot();
         self.insert(&" ".repeat(count));
         self.set_mark(MarkId::Modified);
-        self.set_mark_at(MarkId::Last, original_dot);
+        self.set_mark_at(MarkId::Equals, original_dot);
         if !move_dot {
             // Dot moves when the text is inserted, so we need to move it back.
             self.set_dot(original_dot);
@@ -238,7 +318,7 @@ impl Frame {
         let last = self.dot();
         self.insert(&text.repeat(count));
         self.set_mark(MarkId::Modified);
-        self.set_mark_at(MarkId::Last, last);
+        self.set_mark_at(MarkId::Equals, last);
         CmdResult::Success
     }
 }
@@ -249,7 +329,7 @@ impl Frame {
         if self.delete_forward(count) {
             self.set_mark(MarkId::Modified);
         }
-        self.unset_mark(MarkId::Last);
+        self.unset_mark(MarkId::Equals);
         CmdResult::Success
     }
 
@@ -265,7 +345,7 @@ impl Frame {
         if self.delete_backward(count) {
             self.set_mark_at(MarkId::Modified, final_dot);
         }
-        self.unset_mark(MarkId::Last);
+        self.unset_mark(MarkId::Equals);
         self.set_mark_at(MarkId::Dot, final_dot);
         CmdResult::Success
     }
@@ -275,7 +355,7 @@ impl Frame {
             if self.delete(self.dot(), mark_pos) {
                 self.set_mark(MarkId::Modified);
             }
-            self.unset_mark(MarkId::Last);
+            self.unset_mark(MarkId::Equals);
             CmdResult::Success
         } else {
             CmdResult::Failure(CmdFailure::MarkNotDefined)
@@ -306,7 +386,7 @@ impl Frame {
         let last = self.dot();
         self.overtype(&text.repeat(count));
         self.set_mark(MarkId::Modified);
-        self.set_mark_at(MarkId::Last, last);
+        self.set_mark_at(MarkId::Equals, last);
         CmdResult::Success
     }
 }
@@ -324,7 +404,7 @@ impl Frame {
         // But we need to restore the column since delete may have moved dot
         self.set_dot(Position::new(from_line, original_dot.column));
         self.set_mark(MarkId::Modified);
-        self.set_mark_at(MarkId::Last, original_dot);
+        self.set_mark_at(MarkId::Equals, original_dot);
         CmdResult::Success
     }
 
@@ -338,7 +418,7 @@ impl Frame {
         // Just preserve the column.
         self.set_dot(Position::new(original_dot.line - count, original_dot.column));
         self.set_mark(MarkId::Modified);
-        self.set_mark_at(MarkId::Last, original_dot);
+        self.set_mark_at(MarkId::Equals, original_dot);
         CmdResult::Success
     }
 
@@ -370,6 +450,28 @@ impl Frame {
     }
 }
 
+// Private implementation helpers for swap line
+impl Frame {
+    /// Move the contents of one line to another position in the rope.
+    fn move_line(&mut self, source_line: usize, dest_line: usize) {
+        // Extract line text (including newline) for source_line
+        let start = self.rope.line_to_char(source_line);
+        let end = if source_line + 1 < self.lines() {
+            self.rope.line_to_char(source_line + 1)
+        } else {
+            self.rope.len_chars()
+        };
+        let source_text = self.rope.slice(start..end).to_string();
+
+        // Delete the source line
+        self.rope.remove(start..end);
+
+        // Insert the source text at the destination line
+        let dest_start = self.rope.line_to_char(dest_line);
+        self.rope.insert(dest_start, &source_text);
+    }
+}
+
 // Private implementation helpers for case change
 impl Frame {
     fn case_change_forward(&mut self, count: usize, mode: CaseMode) -> CmdResult {
@@ -391,7 +493,7 @@ impl Frame {
         let original_dot = dot;
         self.set_dot(Position::new(dot.line, dot.column + actual_count));
         self.set_mark(MarkId::Modified);
-        self.set_mark_at(MarkId::Last, original_dot);
+        self.set_mark_at(MarkId::Equals, original_dot);
         CmdResult::Success
     }
 
@@ -416,7 +518,7 @@ impl Frame {
         let original_dot = dot;
         self.set_dot(Position::new(dot.line, new_col));
         self.set_mark(MarkId::Modified);
-        self.set_mark_at(MarkId::Last, original_dot);
+        self.set_mark_at(MarkId::Equals, original_dot);
         CmdResult::Success
     }
 

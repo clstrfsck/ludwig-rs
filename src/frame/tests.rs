@@ -87,6 +87,18 @@ fn test_advance_empty_buffer() {
 }
 
 #[test]
+fn test_advance_equals_mark() {
+    let mut frame = Frame::from_str("a\nb\nc\nd\ne\nf\n");
+    let result = frame.cmd_advance(LeadParam::Pint(2));
+    assert!(result.is_success());
+    let result = frame.cmd_advance(LeadParam::Marker(MarkId::Equals));
+    assert!(result.is_success());
+    let result = frame.cmd_insert_text(LeadParam::None, &TrailParam::from_str("m1"));
+    assert!(result.is_success());
+    assert_eq!(frame.to_string(), "m1a\nb\nc\nd\ne\nf\n");
+}
+
+#[test]
 fn test_delete() {
     let mut frame: Frame = Frame::from_str("hello world\n");
     frame.delete(Position::new(0, 5), Position::new(0, 11));
@@ -224,7 +236,7 @@ fn insert_line_sets_marks() {
     f.set_dot(Position::new(1, 3));
     f.cmd_insert_line(LeadParam::Pint(2));
     // Last set to original dot position
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(1, 3));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(1, 3));
     // Modified set after insert (dot was shifted to line 3 before reset)
     assert!(f.marks.get(MarkId::Modified).is_some());
 }
@@ -321,7 +333,7 @@ fn insert_char_sets_marks() {
     // Modified mark set to dot after insert (col 5), then dot reset to 3
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 5));
     // Last mark set to original dot position
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 3));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(0, 3));
 }
 
 #[test]
@@ -389,7 +401,7 @@ fn delete_forward_updates_marks_and_text() {
     assert_eq!(f.rope.to_string(), "hello!\n");
     assert_eq!(f.marks.get(MarkId::Dot).unwrap(), Position::new(0, 5));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 5));
-    assert_eq!(f.marks.get(MarkId::Last), None);
+    assert_eq!(f.marks.get(MarkId::Equals), None);
     assert_eq!(f.marks.get(M1).unwrap(), Position::new(0, 3));
     assert_eq!(f.marks.get(M2).unwrap(), Position::new(0, 5));
     assert_eq!(f.marks.get(M3).unwrap(), Position::new(0, 5));
@@ -408,7 +420,7 @@ fn delete_backward_updates_marks_and_text() {
     assert_eq!(f.rope.to_string(), "hello!\n");
     assert_eq!(f.marks.get(MarkId::Dot).unwrap(), Position::new(0, 5));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 5));
-    assert_eq!(f.marks.get(MarkId::Last), None);
+    assert_eq!(f.marks.get(MarkId::Equals), None);
     assert_eq!(f.marks.get(M1).unwrap(), Position::new(0, 3));
     assert_eq!(f.marks.get(M2).unwrap(), Position::new(0, 5));
     assert_eq!(f.marks.get(M3).unwrap(), Position::new(0, 5));
@@ -493,7 +505,7 @@ fn insert_text_at_end_updates_marks_and_text() {
     assert_eq!(f.rope.to_string(), "hello world\n");
     assert_eq!(f.marks.get(MarkId::Dot).unwrap(), Position::new(0, 11));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 11));
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 5));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(0, 5));
     assert_eq!(
         f.marks.get(MarkId::Numbered(1)).unwrap(),
         Position::new(0, 11)
@@ -514,7 +526,7 @@ fn insert_text_in_middle_updates_marks_and_text() {
     assert_eq!(f.rope.to_string(), "hello world\n");
     assert_eq!(f.marks.get(MarkId::Dot).unwrap(), Position::new(0, 6));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 6));
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 5));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(0, 5));
     assert_eq!(
         f.marks.get(MarkId::Numbered(1)).unwrap(),
         Position::new(0, 6)
@@ -537,7 +549,7 @@ fn overwrite_text_updates_marks_and_text_when_inserting() {
     assert_eq!(f.rope.to_string(), "hello universe\nline 2\n");
     assert_eq!(f.marks.get(MarkId::Dot).unwrap(), Position::new(0, 14));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 14));
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 6));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(0, 6));
     assert_eq!(
         f.marks.get(MarkId::Numbered(1)).unwrap(),
         Position::new(0, 5)
@@ -568,7 +580,7 @@ fn overwrite_text_updates_marks_and_text_when_overwriting() {
     assert_eq!(f.rope.to_string(), "hello world!!!\nline 2\n");
     assert_eq!(f.dot(), Position::new(0, 14));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 14));
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 6));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(0, 6));
     assert_eq!(
         f.marks.get(MarkId::Numbered(1)).unwrap(),
         Position::new(0, 5)
@@ -598,7 +610,7 @@ fn overwrite_text_extends_line() {
     );
     assert_eq!(f.dot(), Position::new(0, 35));
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 35));
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 5));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(0, 5));
 }
 
 #[test]
@@ -769,7 +781,7 @@ fn case_change_sets_marks() {
     f.set_dot(Position::new(0, 0));
     f.cmd_case_change(LeadParam::Pint(3), CaseMode::Upper);
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 3));
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 0));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(0, 0));
 }
 
 #[test]
@@ -778,7 +790,7 @@ fn case_change_backward_sets_marks() {
     f.set_dot(Position::new(0, 5));
     f.cmd_case_change(LeadParam::Nint(3), CaseMode::Upper);
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 2));
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(0, 5));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(0, 5));
 }
 
 #[test]
@@ -998,7 +1010,7 @@ fn delete_line_sets_marks() {
     f.set_dot(Position::new(1, 2));
     f.cmd_delete_line(LeadParam::None);
     assert!(f.marks.get(MarkId::Modified).is_some());
-    assert_eq!(f.marks.get(MarkId::Last).unwrap(), Position::new(1, 2));
+    assert_eq!(f.marks.get(MarkId::Equals).unwrap(), Position::new(1, 2));
 }
 
 #[test]
@@ -1516,5 +1528,123 @@ fn zd_rejects_minus() {
     let mut f = Frame::from_str("line1\nline2");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_down(LeadParam::Minus);
+    assert!(result.is_failure());
+}
+
+// ===== ZC (Carriage Return) tests =====
+
+#[test]
+fn zc_advance_one_line() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_return(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(1, 0));
+}
+
+#[test]
+fn zc_advance_n_lines() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_return(LeadParam::Pint(2));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(2, 0));
+}
+
+#[test]
+fn zc_advance_backward_rejected() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    f.set_dot(Position::new(2, 3));
+    let result = f.cmd_return(LeadParam::Minus);
+    assert!(result.is_failure());
+}
+
+#[test]
+fn zc_on_last_line_extends_buffer() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    // "line1\nline2\nline3\n" has 4 lines (0..3), line 3 is empty trailing
+    f.set_dot(Position::new(3, 0));
+    let result = f.cmd_return(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(4, 0));
+    assert_eq!(f.to_string(), "line1\nline2\nline3\n\n");
+}
+
+#[test]
+fn zc_on_content_line_extends_buffer() {
+    let mut f = Frame::from_str("line1\nline2\nline3");
+    // Dot on last content line (line 2), ZC should go to line 3 (trailing empty line)
+    f.set_dot(Position::new(2, 3));
+    let result = f.cmd_return(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(3, 0));
+    // Buffer unchanged — line 3 already existed as trailing empty line
+    assert_eq!(f.to_string(), "line1\nline2\nline3\n");
+}
+
+#[test]
+fn zc_multiple_past_end_extends_buffer() {
+    let mut f = Frame::from_str("hello");
+    // "hello\n" has 2 lines (0, 1). Dot on line 0, 3ZC needs line 3
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_return(LeadParam::Pint(3));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(3, 0));
+    assert_eq!(f.to_string(), "hello\n\n\n");
+}
+
+// ===== ZZ (Rubout/Backspace) tests =====
+
+#[test]
+fn zz_delete_one_char_left() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_rubout(LeadParam::None);
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 2));
+    assert_eq!(f.to_string(), "helo\n");
+}
+
+#[test]
+fn zz_delete_n_chars_left() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 4));
+    let result = f.cmd_rubout(LeadParam::Pint(3));
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 1));
+    assert_eq!(f.to_string(), "ho\n");
+}
+
+#[test]
+fn zz_at_col0_fails() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 0));
+    let result = f.cmd_rubout(LeadParam::None);
+    assert!(result.is_failure());
+}
+
+#[test]
+fn zz_not_enough_chars_fails() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 2));
+    let result = f.cmd_rubout(LeadParam::Pint(5));
+    assert!(result.is_failure());
+}
+
+#[test]
+fn zz_pindef_deletes_to_col0() {
+    let mut f = Frame::from_str("hello world");
+    f.set_dot(Position::new(0, 5));
+    let result = f.cmd_rubout(LeadParam::Pindef);
+    assert!(result.is_success());
+    assert_eq!(f.dot(), Position::new(0, 0));
+    assert_eq!(f.to_string(), " world\n");
+}
+
+#[test]
+fn zz_rejects_minus() {
+    let mut f = Frame::from_str("hello");
+    f.set_dot(Position::new(0, 3));
+    let result = f.cmd_rubout(LeadParam::Minus);
     assert!(result.is_failure());
 }
