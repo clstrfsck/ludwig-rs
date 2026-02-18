@@ -23,16 +23,22 @@
 //! assert_eq!(frame.to_string(), "hello universe|     !\n");
 //! ```
 
+pub mod app;
 mod cmd_result;
 pub mod code;
 pub mod compiler;
+pub mod edit_mode;
 mod editor;
 mod frame;
 mod interpreter;
+pub mod keybind;
 mod lead_param;
 mod marks;
 mod position;
+pub mod screen;
+pub mod terminal;
 mod trail_param;
+pub mod viewport;
 
 pub use cmd_result::{CmdFailure, CmdResult};
 pub use code::{CompiledCode, ExecOutcome};

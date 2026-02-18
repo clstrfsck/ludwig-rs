@@ -458,6 +458,46 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
         tpar_count: 0
     },
+    "wb" => CmdInfo {
+        op: CmdOp::WindowBackward,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "we" => CmdInfo {
+        op: CmdOp::WindowEnd,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "wf" => CmdInfo {
+        op: CmdOp::WindowForward,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "wl" => CmdInfo {
+        op: CmdOp::WindowLeft,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "wm" => CmdInfo {
+        op: CmdOp::WindowMiddle,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "wn" => CmdInfo {
+        op: CmdOp::WindowNew,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "wr" => CmdInfo {
+        op: CmdOp::WindowRight,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "wt" => CmdInfo {
+        op: CmdOp::WindowTop,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
     "sl" => CmdInfo {
         op: CmdOp::SplitLine,
         allowed_leads: lead_param_mask!(None),

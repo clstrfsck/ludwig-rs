@@ -1,7 +1,10 @@
 use clap::Parser;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 
+use ludwig::app::App;
+use ludwig::screen::Screen;
+use ludwig::terminal::{CrosstermTerminal, Terminal};
 use ludwig::{Editor, ExecOutcome, compile};
 
 #[derive(Parser, Debug)]
@@ -38,11 +41,60 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let mut output = Vec::<String>::new();
+
+    // Determine whether to run in interactive or batch mode.
+    // Interactive mode: stdin is a terminal AND -M (batch) was not specified.
+    let interactive = io::stdin().is_terminal() && !args.batch;
 
     let maybe_path = args
         .file
-        .map(|s| fs::canonicalize(s).unwrap().to_string_lossy().to_string());
+        .map(|s| {
+            if std::path::Path::new(&s).exists() {
+                fs::canonicalize(&s)
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            } else {
+                s
+            }
+        });
+
+    if interactive {
+        run_interactive(maybe_path);
+    } else {
+        run_batch(maybe_path);
+    }
+}
+
+fn run_interactive(maybe_path: Option<String>) {
+    let file_contents = if let Some(path) = maybe_path.as_ref() {
+        if std::path::Path::new(path).exists() {
+            fs::read_to_string(path).unwrap_or_else(|err| {
+                eprintln!("Failed to read {}: {}", path, err);
+                std::process::exit(1);
+            })
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    let editor = Editor::from_str(&file_contents);
+    let mut terminal = CrosstermTerminal::new();
+    let screen = Screen::new(terminal.size());
+    let mut app = App::new(editor, screen, maybe_path);
+
+    if let Err(e) = app.run(&mut terminal) {
+        // Make sure terminal is cleaned up even on error
+        let _ = terminal.cleanup();
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run_batch(maybe_path: Option<String>) {
+    let mut output = Vec::<String>::new();
 
     let file_contents = if let Some(path) = maybe_path.as_ref() {
         let file_contents = fs::read_to_string(path).unwrap_or_else(|err| {

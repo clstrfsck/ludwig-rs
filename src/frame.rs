@@ -99,6 +99,34 @@ impl Frame {
         self.rope.len_lines()
     }
 
+    /// Get the number of lines in the frame (public accessor for screen mode).
+    pub fn line_count(&self) -> usize {
+        self.lines()
+    }
+
+    /// Get the content of a line as a RopeSlice, excluding the trailing newline.
+    /// Returns None if the line index is out of range.
+    pub fn line_content(&self, line: usize) -> Option<ropey::RopeSlice<'_>> {
+        if line >= self.lines() {
+            return None;
+        }
+        Some(self.rope.line(line))
+    }
+
+    /// Get the length of a line excluding its newline character.
+    /// Returns 0 if the line index is out of range.
+    pub fn line_len(&self, line: usize) -> usize {
+        if line >= self.lines() {
+            return 0;
+        }
+        line_length_excluding_newline(&self.rope, line)
+    }
+
+    /// Get a reference to the underlying rope (for advanced screen rendering).
+    pub fn rope(&self) -> &Rope {
+        &self.rope
+    }
+
     /// Materialize virtual space at a position by padding with spaces.
     ///
     /// If the position is not in virtual space, this is a no-op.

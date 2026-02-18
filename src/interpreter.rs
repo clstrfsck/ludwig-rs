@@ -186,6 +186,15 @@ fn dispatch_cmd(
         CmdOp::WordAdvance => frame.cmd_word_advance(lead),
         CmdOp::DittoUp => frame.cmd_ditto_up(lead),
         CmdOp::DittoDown => frame.cmd_ditto_down(lead),
+        // Window commands are no-ops in batch mode; handled by App in interactive mode.
+        CmdOp::WindowForward
+        | CmdOp::WindowBackward
+        | CmdOp::WindowLeft
+        | CmdOp::WindowRight
+        | CmdOp::WindowTop
+        | CmdOp::WindowEnd
+        | CmdOp::WindowNew
+        | CmdOp::WindowMiddle => CmdResult::Success,
         // FIXME: remove this when everything is implemented
         _ => CmdResult::Failure(CmdFailure::NotImplemented),
     }

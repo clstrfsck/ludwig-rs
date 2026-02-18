@@ -11,6 +11,7 @@ anyhow = "1.0.101"
 clap = { version = "4.5.58", features = ["derive"] }
 itertools = "0.14.0"
 phf = { version = "0.13.1", features = ["macros"] }
+crossterm = "0.28"
 ropey = { version = "1.6", default-features = false, features = ["cr_lines", "simd"] }
 
 [dev-dependencies]
