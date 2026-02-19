@@ -20,7 +20,7 @@ pub struct ViewportParams {
 
 impl ViewportParams {
     pub fn new(height: usize, width: usize) -> Self {
-        let v_margin = (height / 4).max(1).min(5);
+        let v_margin = (height / 4).clamp(1, 5);
         let h_margin = 8usize.min(width / 4);
         Self {
             height,
@@ -117,11 +117,19 @@ impl Viewport {
     }
 
     /// Compute vertical fixup only.
-    fn compute_v_fixup(&self, dot_line: usize, _line_count: usize) -> FixupAction {
+    fn compute_v_fixup(&self, dot_line: usize, line_count: usize) -> FixupAction {
         let top = self.top_line;
         let height = self.params.height;
         let margin = self.params.v_margin;
         let bottom = top + height; // exclusive
+
+        // Maximum upward scroll (positive) before EOF floats above the bottom row.
+        // EOF is at line_count; we want top + scroll + height - 1 <= line_count.
+        let max_up_scroll = if line_count >= top + height {
+            line_count - top - height + 1
+        } else {
+            0
+        };
 
         if dot_line >= top && dot_line < bottom {
             // Dot is within the visible area — check margins
@@ -132,24 +140,34 @@ impl Viewport {
                 FixupAction::ScrollV(-scroll)
             } else if screen_row >= height - margin && screen_row < height {
                 // Too close to bottom — scroll up (reveal lines below)
-                let scroll = (screen_row - (height - margin) + 1) as i32;
-                FixupAction::ScrollV(scroll)
+                let scroll = (screen_row - (height - margin) + 1).min(max_up_scroll);
+                if scroll > 0 {
+                    FixupAction::ScrollV(scroll as i32)
+                } else {
+                    FixupAction::None
+                }
             } else {
                 FixupAction::None
             }
         } else if dot_line < top {
-            // Dot is above the visible area
+            // Dot is above the visible area — scroll to place dot at the margin
             let delta = top - dot_line;
             if delta <= height {
-                FixupAction::ScrollV(-(delta as i32))
+                let scroll = delta + margin.min(top.saturating_sub(delta));
+                FixupAction::ScrollV(-(scroll as i32))
             } else {
                 FixupAction::Redraw
             }
         } else {
-            // Dot is below the visible area
+            // Dot is below the visible area — scroll to place dot at (height - 1 - margin)
             let delta = dot_line - (bottom - 1);
             if delta <= height {
-                FixupAction::ScrollV(delta as i32)
+                let scroll = (delta + margin).min(max_up_scroll);
+                if scroll > 0 {
+                    FixupAction::ScrollV(scroll as i32)
+                } else {
+                    FixupAction::None
+                }
             } else {
                 FixupAction::Redraw
             }
@@ -319,5 +337,34 @@ mod tests {
         assert_eq!(vp.frame_to_screen_col(89), Some(79));
         assert_eq!(vp.frame_to_screen_col(90), None);
         assert_eq!(vp.frame_to_screen_col(9), None);
+    }
+
+    #[test]
+    fn test_bottom_margin_no_scroll_at_eof() {
+        // height=24, v_margin=5, 30 lines (EOF at line 30)
+        // top_line=7: EOF on last row (7+24-1=30). Dot at line 25 = screen row 18.
+        // screen row 18 < height-margin (19), so no scroll needed.
+        let vp = Viewport::new(ViewportParams::new(24, 80));
+        assert_eq!(vp.params.v_margin, 5);
+        let mut vp2 = Viewport::new(ViewportParams::new(24, 80));
+        vp2.top_line = 7;
+        // dot at line 25, screen row 18 = height-margin-1, no fixup
+        let action = vp2.compute_fixup(25, 0, 30);
+        assert_eq!(action, FixupAction::None);
+        // dot at line 26, screen row 19 = height-margin, would want to scroll
+        // but max_up_scroll = 30 - 7 - 24 + 1 = 0, so no scroll
+        let action = vp2.compute_fixup(26, 0, 30);
+        assert_eq!(action, FixupAction::None);
+    }
+
+    #[test]
+    fn test_bottom_margin_limited_scroll_near_eof() {
+        // height=24, v_margin=5, 35 lines (EOF at line 35)
+        // top_line=7: bottom=31. Dot at line 26 = screen row 19 = height-margin.
+        // Want to scroll 1, max_up_scroll = 35 - 7 - 24 + 1 = 5, so scroll 1 is fine.
+        let mut vp = Viewport::new(ViewportParams::new(24, 80));
+        vp.top_line = 7;
+        let action = vp.compute_fixup(26, 0, 35);
+        assert_eq!(action, FixupAction::ScrollV(1));
     }
 }

@@ -47,7 +47,7 @@ impl Frame {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         let mut r = Rope::from_str(s);
-        if s.len() > 0 && !s.ends_with('\n') {
+        if !s.is_empty() && !s.ends_with('\n') {
             r.insert_char(r.len_chars(), '\n');
         }
         Self {

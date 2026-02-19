@@ -135,10 +135,9 @@ impl App {
     /// Execute compiled code, intercepting window commands.
     fn execute_code(&mut self, code: &CompiledCode, terminal: &mut dyn Terminal) {
         for instr in &code.instructions {
-            if let Instruction::SimpleCmd { op, lead, .. } = instr {
-                if self.try_handle_window_cmd(*op, *lead, terminal) {
-                    continue;
-                }
+            if let Instruction::SimpleCmd { op, lead, .. } = instr
+                && self.try_handle_window_cmd(*op, *lead, terminal) {
+                continue;
             }
             // Not a window command — pass single instruction to interpreter
             let single = CompiledCode {
@@ -163,24 +162,28 @@ impl App {
 
         let count = match lead {
             LeadParam::None | LeadParam::Plus => 1,
-            LeadParam::Pint(n) => n as usize,
+            LeadParam::Pint(n) => n,
             LeadParam::Pindef => usize::MAX,
             _ => return false,
         };
 
         match op {
             CmdOp::WindowForward => {
-                let scroll = (count * height).min(height * 100); // reasonable cap
-                self.screen.viewport.top_line += scroll;
-                self.screen.invalidate();
-                self.screen.redraw(self.editor.current_frame(), terminal);
+                // Move dot forward by text_height * count lines (like the C reference).
+                // Fixup will scroll the viewport to follow dot.
+                let frame = self.editor.current_frame_mut();
+                let dot = frame.dot();
+                let new_line = dot.line.saturating_add(count * height);
+                frame.set_dot(crate::Position::new(new_line, dot.column));
                 true
             }
             CmdOp::WindowBackward => {
-                let scroll = (count * height).min(self.screen.viewport.top_line);
-                self.screen.viewport.top_line -= scroll;
-                self.screen.invalidate();
-                self.screen.redraw(self.editor.current_frame(), terminal);
+                // Move dot backward by text_height * count lines (like the C reference).
+                // Fixup will scroll the viewport to follow dot.
+                let frame = self.editor.current_frame_mut();
+                let dot = frame.dot();
+                let new_line = dot.line.saturating_sub(count * height);
+                frame.set_dot(crate::Position::new(new_line, dot.column));
                 true
             }
             CmdOp::WindowTop => {
@@ -232,18 +235,15 @@ impl App {
 
     /// Handle command input mode (after pressing Escape).
     fn command_input(&mut self, terminal: &mut dyn Terminal) {
-        // Show prompt
-        let height = self.screen.viewport.params.height;
-        let prompt_row = (height - 1) as u16;
-        terminal.move_cursor(0, prompt_row);
-        terminal.write_str("Command: ");
-        terminal.clear_eol();
-        terminal.flush();
+        const PROMPT: &str = "Command: ";
+        let prompt_len = PROMPT.len();
+
+        // Show prompt via buffered screen
         self.screen.msg_rows = 1;
+        self.screen.update_message_row(terminal, PROMPT, prompt_len);
 
         // Read command line
         let mut input = String::new();
-        let prompt_len = 9u16; // "Command: "
 
         loop {
             let key = match terminal.read_key() {
@@ -264,16 +264,14 @@ impl App {
                 crossterm::event::KeyCode::Backspace => {
                     if !input.is_empty() {
                         input.pop();
-                        let col = prompt_len + input.len() as u16;
-                        terminal.move_cursor(col, prompt_row);
-                        terminal.clear_eol();
-                        terminal.flush();
+                        let line = format!("{}{}", PROMPT, input);
+                        self.screen.update_message_row(terminal, &line, prompt_len + input.len());
                     }
                 }
                 crossterm::event::KeyCode::Char(ch) => {
                     input.push(ch);
-                    terminal.write_char(ch);
-                    terminal.flush();
+                    let line = format!("{}{}", PROMPT, input);
+                    self.screen.update_message_row(terminal, &line, prompt_len + input.len());
                 }
                 _ => {}
             }

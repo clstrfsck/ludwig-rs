@@ -1,28 +1,22 @@
 //! Screen rendering for interactive mode.
 //!
 //! The Screen reads Frame state through public accessors and uses a Terminal
-//! to render the visible portion of text. It owns a Viewport for tracking
-//! which part of the frame is currently shown.
+//! to render the visible portion of text. It uses a double-buffered cell grid:
+//! render into `next`, diff against `current`, emit only changed cells, then swap.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
+use crate::cell_buffer::CellBuffer;
 use crate::frame::Frame;
 use crate::terminal::{TermSize, Terminal};
 use crate::viewport::{FixupAction, Viewport, ViewportParams};
-
-/// Line cache entry for diff-based rendering.
-#[derive(Debug, Clone)]
-struct CachedLine {
-    hash: u64,
-}
 
 /// Manages screen rendering.
 pub struct Screen {
     /// The viewport tracking visible region.
     pub viewport: Viewport,
-    /// Cached line hashes for each screen row, for diff-based updates.
-    line_cache: Vec<Option<CachedLine>>,
+    /// What is currently on the terminal screen.
+    current: CellBuffer,
+    /// What we are rendering into before diffing.
+    next: CellBuffer,
     /// Number of bottom rows currently used for messages.
     pub msg_rows: usize,
 }
@@ -36,7 +30,8 @@ impl Screen {
         let width = term_size.width as usize;
         Self {
             viewport: Viewport::new(ViewportParams::new(height, width)),
-            line_cache: vec![None; height],
+            current: CellBuffer::new(width, height),
+            next: CellBuffer::new(width, height),
             msg_rows: 0,
         }
     }
@@ -46,15 +41,14 @@ impl Screen {
         let height = term_size.height as usize;
         let width = term_size.width as usize;
         self.viewport.resize(height, width);
-        self.line_cache.resize(height, None);
+        self.current.resize(width, height);
+        self.next.resize(width, height);
         self.invalidate();
     }
 
-    /// Invalidate the entire line cache, forcing a full redraw on next fixup.
+    /// Invalidate the screen, forcing a full redraw on next diff.
     pub fn invalidate(&mut self) {
-        for entry in &mut self.line_cache {
-            *entry = None;
-        }
+        self.current.clear();
     }
 
     /// Number of usable text rows (total height minus message rows).
@@ -78,60 +72,86 @@ impl Screen {
             FixupAction::None => {}
             FixupAction::ScrollV(n) => {
                 self.viewport.apply_fixup(&action);
-                self.scroll_screen(frame, terminal, *n);
+                self.scroll_terminal(terminal, *n);
             }
             FixupAction::SlideH(_) => {
                 self.viewport.apply_fixup(&action);
-                // Horizontal slide requires full redraw of all lines
-                self.redraw(frame, terminal);
             }
             FixupAction::ScrollAndSlide { .. } => {
                 self.viewport.apply_fixup(&action);
-                self.redraw(frame, terminal);
             }
             FixupAction::Redraw => {
                 self.viewport.center_on(dot.line, dot.column);
-                self.redraw(frame, terminal);
             }
         }
+
+        // Render into next buffer, diff, and swap
+        self.render_and_flush(frame, terminal);
 
         // Position the cursor at dot
         self.position_cursor(frame, terminal);
         terminal.flush();
     }
 
-    /// Full screen redraw.
+    /// Full screen redraw: invalidate, render, diff, and flush.
     pub fn redraw(&mut self, frame: &Frame, terminal: &mut dyn Terminal) {
-        let text_height = self.text_height();
-        for row in 0..text_height {
-            self.draw_line(frame, terminal, row);
-        }
+        self.render_and_flush(frame, terminal);
     }
 
-    /// Draw a single screen row from the frame.
-    fn draw_line(&mut self, frame: &Frame, terminal: &mut dyn Terminal, screen_row: usize) {
+    /// Render all visible lines into `next`, diff against `current`, emit changes, swap.
+    fn render_and_flush(&mut self, frame: &Frame, terminal: &mut dyn Terminal) {
+        let text_height = self.text_height();
+        self.next.clear();
+        for row in 0..text_height {
+            self.render_line(frame, row);
+        }
+        // Preserve message rows in next buffer from current (messages are managed separately)
+        let height = self.viewport.params.height;
+        for row in text_height..height {
+            self.next.copy_row_from(row, &self.current, row);
+        }
+        CellBuffer::diff(&self.current, &self.next, terminal);
+        std::mem::swap(&mut self.current, &mut self.next);
+    }
+
+    /// Render a single screen row from the frame into the `next` buffer.
+    fn render_line(&mut self, frame: &Frame, screen_row: usize) {
         let frame_line = self.viewport.top_line + screen_row;
         let offset = self.viewport.offset;
         let width = self.viewport.params.width;
 
-        // Build the line content string
         let content = self.build_line_content(frame, frame_line, offset, width);
+        self.next.write_str(0, screen_row, &content);
+    }
 
-        // Check cache
-        let hash = hash_str(&content);
-        if let Some(cached) = &self.line_cache[screen_row] {
-            if cached.hash == hash {
-                return; // Already up to date
-            }
+    /// Scroll the physical terminal and shift `current` to match.
+    /// After this, `current` accurately reflects what's on the terminal,
+    /// so the subsequent `render_and_flush` diff only emits newly revealed rows.
+    fn scroll_terminal(&mut self, terminal: &mut dyn Terminal, amount: i32) {
+        let text_height = self.text_height();
+
+        if amount.unsigned_abs() as usize >= text_height {
+            // Scroll exceeds screen — no point in terminal scroll, full diff will handle it
+            return;
         }
 
-        // Write the line
-        terminal.move_cursor(0, screen_row as u16);
-        terminal.write_str(&content);
-        terminal.clear_eol();
+        // Constrain scroll region to the text area if messages are visible
+        if self.msg_rows > 0 {
+            terminal.set_scroll_region(0, (text_height - 1) as u16);
+        }
 
-        // Update cache
-        self.line_cache[screen_row] = Some(CachedLine { hash });
+        if amount > 0 {
+            terminal.scroll_up(amount as u16);
+        } else {
+            terminal.scroll_down((-amount) as u16);
+        }
+
+        if self.msg_rows > 0 {
+            terminal.reset_scroll_region();
+        }
+
+        // Shift `current` the same way so it matches the terminal
+        self.current.shift_rows(0, text_height, amount);
     }
 
     /// Build the visible portion of a frame line as a string.
@@ -200,64 +220,6 @@ impl Screen {
         result
     }
 
-    /// Scroll the screen vertically and redraw newly revealed lines.
-    fn scroll_screen(&mut self, frame: &Frame, terminal: &mut dyn Terminal, scroll_amount: i32) {
-        let text_height = self.text_height();
-
-        if scroll_amount.unsigned_abs() as usize >= text_height {
-            // Too much scrolling — just redraw everything
-            self.invalidate();
-            self.redraw(frame, terminal);
-            return;
-        }
-
-        if scroll_amount > 0 {
-            // Scroll up: content moves up, new lines at bottom
-            let n = scroll_amount as usize;
-
-            // Set scroll region to text area only
-            if self.msg_rows > 0 {
-                terminal.set_scroll_region(0, (text_height - 1) as u16);
-            }
-            terminal.scroll_up(scroll_amount as u16);
-            if self.msg_rows > 0 {
-                terminal.reset_scroll_region();
-            }
-
-            // Shift cache up
-            self.line_cache.drain(..n);
-            self.line_cache.resize(self.viewport.params.height, None);
-
-            // Draw newly revealed bottom lines
-            for row in (text_height - n)..text_height {
-                self.draw_line(frame, terminal, row);
-            }
-        } else {
-            // Scroll down: content moves down, new lines at top
-            let n = (-scroll_amount) as usize;
-
-            if self.msg_rows > 0 {
-                terminal.set_scroll_region(0, (text_height - 1) as u16);
-            }
-            terminal.scroll_down(n as u16);
-            if self.msg_rows > 0 {
-                terminal.reset_scroll_region();
-            }
-
-            // Shift cache down
-            let total = self.line_cache.len();
-            self.line_cache.truncate(total - n);
-            for _ in 0..n {
-                self.line_cache.insert(0, None);
-            }
-
-            // Draw newly revealed top lines
-            for row in 0..n {
-                self.draw_line(frame, terminal, row);
-            }
-        }
-    }
-
     /// Position the terminal cursor at the frame's dot position.
     fn position_cursor(&self, frame: &Frame, terminal: &mut dyn Terminal) {
         let dot = frame.dot();
@@ -269,38 +231,59 @@ impl Screen {
     /// Show a message on the bottom line(s) of the screen.
     pub fn show_message(&mut self, terminal: &mut dyn Terminal, msg: &str) {
         let height = self.viewport.params.height;
-        let row = (height - 1) as u16;
-        terminal.move_cursor(0, row);
-        terminal.write_str(msg);
-        terminal.clear_eol();
+        let width = self.viewport.params.width;
+        let row = height - 1;
         self.msg_rows = 1;
+
+        // Write message into next buffer, diff, swap
+        self.next.clear_row(row);
+        self.next.write_str(0, row, &msg[..msg.len().min(width)]);
+        // Copy all other rows from current
+        for r in 0..row {
+            self.next.copy_row_from(r, &self.current, r);
+        }
+        CellBuffer::diff(&self.current, &self.next, terminal);
+        std::mem::swap(&mut self.current, &mut self.next);
         terminal.flush();
     }
 
-    /// Clear the message area and restore those lines.
-    pub fn clear_message(&mut self, frame: &Frame, terminal: &mut dyn Terminal) {
-        if self.msg_rows > 0 {
-            self.msg_rows = 0;
-            // Invalidate and redraw the previously-covered rows
-            let height = self.viewport.params.height;
-            for row in (height - 1)..height {
-                self.line_cache[row] = None;
-                self.draw_line(frame, terminal, row);
-            }
-        }
-    }
-}
+    /// Update the message row content and position cursor at a given column.
+    /// Used by command_input to keep the prompt line in sync with the cell buffer.
+    pub fn update_message_row(&mut self, terminal: &mut dyn Terminal, content: &str, cursor_col: usize) {
+        let height = self.viewport.params.height;
+        let width = self.viewport.params.width;
+        let row = height - 1;
 
-fn hash_str(s: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    s.hash(&mut hasher);
-    hasher.finish()
+        self.next.clear_row(row);
+        self.next.write_str(0, row, &content[..content.len().min(width)]);
+        // Copy all other rows from current
+        for r in 0..row {
+            self.next.copy_row_from(r, &self.current, r);
+        }
+        CellBuffer::diff(&self.current, &self.next, terminal);
+        std::mem::swap(&mut self.current, &mut self.next);
+        terminal.move_cursor(cursor_col as u16, row as u16);
+        terminal.flush();
+    }
+
+    /// Return the screen row used for messages (bottom row).
+    pub fn message_row(&self) -> u16 {
+        (self.viewport.params.height - 1) as u16
+    }
+
+    /// Clear the message area. The next render_and_flush will overwrite the
+    /// prompt on screen because `current` still holds the prompt text — the
+    /// diff against the freshly rendered frame content emits every differing
+    /// cell, including trailing spaces that erase leftover prompt characters.
+    pub fn clear_message(&mut self, _frame: &Frame, _terminal: &mut dyn Terminal) {
+        self.msg_rows = 0;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::terminal::{MockTerminal, MockOp, TermSize};
+    use crate::terminal::{MockOp, MockTerminal, TermSize};
 
     #[test]
     fn test_screen_new() {
@@ -310,7 +293,8 @@ mod tests {
         });
         assert_eq!(screen.viewport.top_line, 0);
         assert_eq!(screen.viewport.offset, 0);
-        assert_eq!(screen.line_cache.len(), 24);
+        assert_eq!(screen.current.width(), 80);
+        assert_eq!(screen.current.height(), 24);
     }
 
     #[test]
@@ -368,15 +352,19 @@ mod tests {
         let frame = Frame::from_str("line1\nline2\nline3");
         let mut term = MockTerminal::new(80, 5);
 
+        // Invalidate so everything differs
+        screen.invalidate();
         screen.redraw(&frame, &mut term);
 
-        // Should have drawn 5 rows (3 content + EOF + blank)
-        let move_ops: Vec<_> = term
+        // Should have written content for 3 lines + EOF marker line
+        // (line 4 is blank past EOF, same as cleared buffer)
+        let write_ops: Vec<_> = term
             .ops
             .iter()
-            .filter(|op| matches!(op, MockOp::MoveCursor(0, _)))
+            .filter(|op| matches!(op, MockOp::WriteStr(_)))
             .collect();
-        assert_eq!(move_ops.len(), 5);
+        // At least the 3 content lines + EOF marker should have been written
+        assert!(write_ops.len() >= 4, "Expected at least 4 writes, got: {:?}", write_ops);
     }
 
     #[test]
@@ -410,13 +398,11 @@ mod tests {
         screen.show_message(&mut term, "Test message");
         assert_eq!(screen.msg_rows, 1);
 
-        // Check that it wrote to the bottom row
+        // Check that terminal ops include the message content
         assert!(term
             .ops
-            .contains(&MockOp::MoveCursor(0, 23)));
-        assert!(term
-            .ops
-            .contains(&MockOp::WriteStr("Test message".to_string())));
+            .iter()
+            .any(|op| matches!(op, MockOp::WriteStr(s) if s.contains("Test message"))));
     }
 
     #[test]
@@ -431,5 +417,127 @@ mod tests {
         screen.msg_rows = 1;
         screen.clear_message(&frame, &mut term);
         assert_eq!(screen.msg_rows, 0);
+    }
+
+    #[test]
+    fn test_redraw_no_change_second_time() {
+        let mut screen = Screen::new(TermSize {
+            width: 80,
+            height: 5,
+        });
+        let frame = Frame::from_str("line1\nline2\nline3");
+        let mut term = MockTerminal::new(80, 5);
+
+        // First redraw after invalidate
+        screen.invalidate();
+        screen.redraw(&frame, &mut term);
+
+        // Second redraw without changes — should produce no terminal ops
+        term.ops.clear();
+        screen.redraw(&frame, &mut term);
+        let write_ops: Vec<_> = term
+            .ops
+            .iter()
+            .filter(|op| matches!(op, MockOp::WriteStr(_)))
+            .collect();
+        assert_eq!(write_ops.len(), 0, "Expected no writes on unchanged redraw, got: {:?}", write_ops);
+    }
+
+    #[test]
+    fn test_scroll_up_uses_terminal_scroll() {
+        let mut screen = Screen::new(TermSize {
+            width: 20,
+            height: 5,
+        });
+        // 10 lines so we can scroll
+        let text: String = (0..10).map(|i| format!("line{}\n", i)).collect();
+        let mut frame = Frame::from_str(&text);
+        let mut term = MockTerminal::new(20, 5);
+
+        // Initial render to populate current buffer
+        screen.invalidate();
+        screen.fixup(&frame, &mut term);
+        term.ops.clear();
+
+        // Move dot below visible area to trigger scroll
+        frame.set_dot(crate::Position::new(5, 0));
+        screen.fixup(&frame, &mut term);
+
+        // Should have used terminal scroll_up
+        assert!(
+            term.ops.iter().any(|op| matches!(op, MockOp::ScrollUp(_))),
+            "Expected ScrollUp in ops: {:?}", term.ops
+        );
+    }
+
+    #[test]
+    fn test_scroll_down_uses_terminal_scroll() {
+        let mut screen = Screen::new(TermSize {
+            width: 20,
+            height: 5,
+        });
+        let text: String = (0..10).map(|i| format!("line{}\n", i)).collect();
+        let mut frame = Frame::from_str(&text);
+        let mut term = MockTerminal::new(20, 5);
+
+        // Position viewport in the middle
+        frame.set_dot(crate::Position::new(5, 0));
+        screen.fixup(&frame, &mut term);
+        term.ops.clear();
+
+        // Move dot above visible area to trigger scroll down
+        frame.set_dot(crate::Position::new(0, 0));
+        screen.fixup(&frame, &mut term);
+
+        assert!(
+            term.ops.iter().any(|op| matches!(op, MockOp::ScrollDown(_))),
+            "Expected ScrollDown in ops: {:?}", term.ops
+        );
+    }
+
+    #[test]
+    fn test_scroll_only_writes_new_rows() {
+        let mut screen = Screen::new(TermSize {
+            width: 20,
+            height: 5,
+        });
+        // Use distinct line content so we can identify what was written
+        let text: String = (0..10).map(|i| format!("LINE-{:02}\n", i)).collect();
+        let mut frame = Frame::from_str(&text);
+        let mut term = MockTerminal::new(20, 5);
+
+        // Initial render: shows lines 0-4
+        screen.invalidate();
+        screen.fixup(&frame, &mut term);
+        term.ops.clear();
+
+        // Move dot to line 5 (just past bottom). With v_margin=1 (height=5),
+        // the fixup scrolls by delta+margin = 1+1 = 2 lines.
+        // Viewport moves from lines 0-4 to lines 2-6.
+        // Terminal scroll shifts 2 rows, revealing 2 new rows at the bottom.
+        frame.set_dot(crate::Position::new(5, 0));
+        screen.fixup(&frame, &mut term);
+
+        // Only the newly revealed lines should be written, not the
+        // lines which were already on screen (just shifted by terminal scroll)
+        let write_ops: Vec<_> = term
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                MockOp::WriteStr(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect();
+
+        // 2 newly revealed lines: LINE-05 and LINE-06 (due to margin)
+        assert_eq!(write_ops.len(), 2, "Expected 2 writes for new rows, got: {:?}", write_ops);
+        assert!(
+            write_ops[0].contains("LINE-05"),
+            "Expected newly revealed line, got: {:?}", write_ops
+        );
+        assert!(
+            write_ops[1].contains("LINE-06"),
+            "Expected newly revealed line, got: {:?}", write_ops
+        );
     }
 }

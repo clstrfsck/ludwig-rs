@@ -24,6 +24,7 @@
 //! ```
 
 pub mod app;
+pub mod cell_buffer;
 mod cmd_result;
 pub mod code;
 pub mod compiler;

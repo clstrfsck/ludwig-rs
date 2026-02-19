@@ -330,7 +330,7 @@ impl Frame {
                 col = line_len as isize; // virtual space at EOL
             }
 
-            if col < 0 || (line >= num_lines && col < 0) {
+            if col < 0 {
                 // Need to go to previous line
                 if line == 0 {
                     // At the very beginning
@@ -492,7 +492,7 @@ impl Frame {
                 if rc != pc {
                     return false;
                 }
-            } else if rc.to_ascii_lowercase() != pc.to_ascii_lowercase() {
+            } else if !unicode_case_eq_char(rc, pc) {
                 return false;
             }
         }
@@ -515,4 +515,12 @@ impl Frame {
 /// For BR (bridge=true): matches if char is NOT in the set (complement).
 fn char_matches(ch: char, chars: &HashSet<char>, bridge: bool) -> bool {
     chars.contains(&ch) ^ bridge
+}
+
+/// Unicode-aware, case-insensitive equality for single scalar values.
+///
+/// This compares lowercase expansions, so it handles mappings where
+/// a single character lowercases to multiple code points.
+fn unicode_case_eq_char(a: char, b: char) -> bool {
+    a.to_lowercase().eq(b.to_lowercase())
 }

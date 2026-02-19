@@ -67,6 +67,12 @@ pub struct CrosstermTerminal {
     size: TermSize,
 }
 
+impl Default for CrosstermTerminal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrosstermTerminal {
     pub fn new() -> Self {
         let (w, h) = crossterm::terminal::size().unwrap_or((80, 24));
