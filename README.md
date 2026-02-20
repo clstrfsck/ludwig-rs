@@ -12,6 +12,8 @@
 {**********************************************************************}
 ```
 
+[![Rust](https://github.com/clstrfsck/ludwig-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/clstrfsck/ludwig-rs/actions/workflows/rust.yml)
+
 ## About
 
 Ludwig is a text editor, originally for VAX/VMS and written at the University of
@@ -122,14 +124,14 @@ Conscious decisions to diverge are mostly documented in the "Divergences"
 section.
 
 On the other hand, the internals have diverged significantly.  Rather than
-an indexed skip list of lines for the contents of each frame, a 
+an indexed skip list of lines for the contents of each frame, a
 [rope](https://en.wikipedia.org/wiki/Rope_(data_structure)) is used.
 Another structural difference has compiled code generated into a tree
 structure and interpreted from there.
 
 The former choice has clear advantages over the linked list approach, and
 few downsides other than implementation complexity.  It's not obvious to
-me that the latter choice is better in any way other than it's easier to 
+me that the latter choice is better in any way other than it's easier to
 reason about.
 
 ## Divergences
