@@ -64,8 +64,8 @@ impl SearchCommands for Frame {
             LeadParam::Pint(n) => (n as isize, false),
             LeadParam::Minus => (-1, false),
             LeadParam::Nint(n) => (-(n as isize), false),
-            LeadParam::Pindef => (1, true),   // >R: replace all forward
-            LeadParam::Nindef => (-1, true),  // <R: replace all backward
+            LeadParam::Pindef => (1, true), // >R: replace all forward
+            LeadParam::Nindef => (-1, true), // <R: replace all backward
             _ => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
 
@@ -424,10 +424,7 @@ impl Frame {
 
             while col + pat_len <= line_len {
                 if self.matches_at_pos(line_start + col, &pat_chars, case_sensitive) {
-                    return Some((
-                        Position::new(line, col),
-                        Position::new(line, col + pat_len),
-                    ));
+                    return Some((Position::new(line, col), Position::new(line, col + pat_len)));
                 }
                 col += 1;
             }
@@ -467,10 +464,7 @@ impl Frame {
                 if c + pat_len <= line_len
                     && self.matches_at_pos(line_start + c, &pat_chars, case_sensitive)
                 {
-                    return Some((
-                        Position::new(line, c + pat_len),
-                        Position::new(line, c),
-                    ));
+                    return Some((Position::new(line, c + pat_len), Position::new(line, c)));
                 }
                 col -= 1;
             }

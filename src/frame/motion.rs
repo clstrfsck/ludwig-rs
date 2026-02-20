@@ -186,11 +186,7 @@ impl Frame {
         let old_pos = self.dot();
         let new_line = old_pos.line + count;
         // Can't advance to last blank line if allow_last is false
-        let last_line = if allow_last {
-            new_line
-        } else {
-            new_line + 1
-        };
+        let last_line = if allow_last { new_line } else { new_line + 1 };
         if last_line >= self.lines() && !allow_last {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }

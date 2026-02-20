@@ -3,9 +3,9 @@
 
 use std::fmt;
 
-use crate::{MarkId, code::*};
 use crate::Frame;
 use crate::interpreter;
+use crate::{MarkId, code::*};
 
 /// An editor instance that wraps a Frame and provides command execution.
 pub struct Editor {

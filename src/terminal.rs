@@ -102,10 +102,7 @@ impl Terminal for CrosstermTerminal {
     }
 
     fn cleanup(&mut self) -> Result<()> {
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::LeaveAlternateScreen
-        )?;
+        crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
         crossterm::terminal::disable_raw_mode()?;
         Ok(())
     }

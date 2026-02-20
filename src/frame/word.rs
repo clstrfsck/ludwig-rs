@@ -118,15 +118,15 @@ impl Frame {
         let dot = self.dot();
         let mut line = dot.line;
 
-		// Find non-blank line in paragraph
+        // Find non-blank line in paragraph
         while line > 0 && line_is_blank(&self.rope, line) {
             line -= 1;
         }
-		// Find blank line separating this para from previous
+        // Find blank line separating this para from previous
         while line > 0 && !line_is_blank(&self.rope, line) {
             line -= 1;
         }
-		// Find first non-blank
+        // Find first non-blank
         while line_is_blank(&self.rope, line) {
             if line + 1 >= self.lines() {
                 return CmdResult::Failure(CmdFailure::OutOfRange);
@@ -135,7 +135,10 @@ impl Frame {
         }
         // This line is not blank, so find first non-blank char
         let line_data = self.rope.line(line);
-        let pos = line_data.chars().position(|ch| !ch.is_whitespace()).unwrap_or(0);
+        let pos = line_data
+            .chars()
+            .position(|ch| !ch.is_whitespace())
+            .unwrap_or(0);
 
         self.set_mark_at(MarkId::Equals, dot);
         self.set_dot(Position::new(line, pos));
@@ -146,10 +149,7 @@ impl Frame {
     fn word_advance_backward(&mut self, count: usize) -> CmdResult {
         let dot = self.dot();
         let mut line = dot.line;
-        let mut pos = min(
-            dot.column,
-            line_length_excluding_newline(&self.rope, line)
-        );
+        let mut pos = min(dot.column, line_length_excluding_newline(&self.rope, line));
 
         for i in 0..=count {
             // Find start of previous word (or current word if i==0)
@@ -163,7 +163,7 @@ impl Frame {
                         CmdResult::Success // At beginning already
                     } else {
                         CmdResult::Failure(CmdFailure::OutOfRange)
-                    }
+                    };
                 }
             }
         }

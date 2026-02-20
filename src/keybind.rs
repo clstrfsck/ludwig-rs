@@ -85,15 +85,30 @@ mod tests {
 
     #[test]
     fn test_arrow_keys() {
-        assert_eq!(resolve_key(key(KeyCode::Up)), KeyAction::Command("ZU".to_string()));
-        assert_eq!(resolve_key(key(KeyCode::Down)), KeyAction::Command("ZD".to_string()));
-        assert_eq!(resolve_key(key(KeyCode::Left)), KeyAction::Command("ZL".to_string()));
-        assert_eq!(resolve_key(key(KeyCode::Right)), KeyAction::Command("ZR".to_string()));
+        assert_eq!(
+            resolve_key(key(KeyCode::Up)),
+            KeyAction::Command("ZU".to_string())
+        );
+        assert_eq!(
+            resolve_key(key(KeyCode::Down)),
+            KeyAction::Command("ZD".to_string())
+        );
+        assert_eq!(
+            resolve_key(key(KeyCode::Left)),
+            KeyAction::Command("ZL".to_string())
+        );
+        assert_eq!(
+            resolve_key(key(KeyCode::Right)),
+            KeyAction::Command("ZR".to_string())
+        );
     }
 
     #[test]
     fn test_printable_char() {
-        assert_eq!(resolve_key(key(KeyCode::Char('a'))), KeyAction::InsertChar('a'));
+        assert_eq!(
+            resolve_key(key(KeyCode::Char('a'))),
+            KeyAction::InsertChar('a')
+        );
     }
 
     #[test]
@@ -108,11 +123,17 @@ mod tests {
 
     #[test]
     fn test_backspace() {
-        assert_eq!(resolve_key(key(KeyCode::Backspace)), KeyAction::Command("ZZ".to_string()));
+        assert_eq!(
+            resolve_key(key(KeyCode::Backspace)),
+            KeyAction::Command("ZZ".to_string())
+        );
     }
 
     #[test]
     fn test_enter() {
-        assert_eq!(resolve_key(key(KeyCode::Enter)), KeyAction::Command("ZC".to_string()));
+        assert_eq!(
+            resolve_key(key(KeyCode::Enter)),
+            KeyAction::Command("ZC".to_string())
+        );
     }
 }

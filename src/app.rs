@@ -5,16 +5,16 @@
 
 use anyhow::Result;
 
+use crate::TrailParam;
 use crate::code::{CmdOp, CompiledCode, Instruction};
 use crate::compiler;
 use crate::edit_mode::EditMode;
 use crate::editor::Editor;
+use crate::frame::EditCommands;
 use crate::keybind::{self, KeyAction};
 use crate::lead_param::LeadParam;
 use crate::screen::Screen;
 use crate::terminal::Terminal;
-use crate::TrailParam;
-use crate::frame::EditCommands;
 
 /// The interactive application state.
 pub struct App {
@@ -63,7 +63,8 @@ impl App {
     /// Handle a resolved key action.
     fn handle_action(&mut self, action: KeyAction, terminal: &mut dyn Terminal) {
         // Clear any message before processing
-        self.screen.clear_message(self.editor.current_frame(), terminal);
+        self.screen
+            .clear_message(self.editor.current_frame(), terminal);
 
         match action {
             KeyAction::InsertChar(ch) => {
@@ -125,8 +126,7 @@ impl App {
                 self.execute_code(&code, terminal);
             }
             Err(e) => {
-                self.screen
-                    .show_message(terminal, &format!("Error: {}", e));
+                self.screen.show_message(terminal, &format!("Error: {}", e));
                 terminal.beep();
             }
         }
@@ -136,7 +136,8 @@ impl App {
     fn execute_code(&mut self, code: &CompiledCode, terminal: &mut dyn Terminal) {
         for instr in &code.instructions {
             if let Instruction::SimpleCmd { op, lead, .. } = instr
-                && self.try_handle_window_cmd(*op, *lead, terminal) {
+                && self.try_handle_window_cmd(*op, *lead, terminal)
+            {
                 continue;
             }
             // Not a window command — pass single instruction to interpreter
@@ -265,13 +266,15 @@ impl App {
                     if !input.is_empty() {
                         input.pop();
                         let line = format!("{}{}", PROMPT, input);
-                        self.screen.update_message_row(terminal, &line, prompt_len + input.len());
+                        self.screen
+                            .update_message_row(terminal, &line, prompt_len + input.len());
                     }
                 }
                 crossterm::event::KeyCode::Char(ch) => {
                     input.push(ch);
                     let line = format!("{}{}", PROMPT, input);
-                    self.screen.update_message_row(terminal, &line, prompt_len + input.len());
+                    self.screen
+                        .update_message_row(terminal, &line, prompt_len + input.len());
                 }
                 _ => {}
             }

@@ -315,7 +315,6 @@ macro_rules! lead_param_mask {
     };
 }
 
-
 /// Which kinds of leading parameter are accepted (used for validation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeadParamKind {
@@ -582,7 +581,8 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
 
 /// Map a command name string to its CmdInfo.
 fn name_to_info(name: &str) -> Result<&'static CmdInfo> {
-    NAME_TO_OP_MAP.get(name)
+    NAME_TO_OP_MAP
+        .get(name)
         .ok_or_else(|| anyhow::anyhow!("Syntax error: unknown command '{}'.", name.to_uppercase()))
 }
 
@@ -688,7 +688,9 @@ mod tests {
     fn test_insert_with_count() {
         let instrs = compile_ok("3I'world'");
         match &instrs[0] {
-            Instruction::SimpleCmd { op, lead, tpars, .. } => {
+            Instruction::SimpleCmd {
+                op, lead, tpars, ..
+            } => {
                 assert_eq!(*op, CmdOp::InsertText);
                 assert_eq!(*lead, LeadParam::Pint(3));
                 assert_eq!(tpars[0].str, "world");
@@ -1035,7 +1037,9 @@ mod tests {
     fn test_case_with_exit_handler() {
         let instrs = compile_ok("*U[I/ok/]");
         match &instrs[0] {
-            Instruction::SimpleCmd { op, exit_handler, .. } => {
+            Instruction::SimpleCmd {
+                op, exit_handler, ..
+            } => {
                 assert_eq!(*op, CmdOp::CaseUp);
                 assert!(exit_handler.is_some());
             }

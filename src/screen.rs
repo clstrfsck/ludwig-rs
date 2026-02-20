@@ -65,7 +65,9 @@ impl Screen {
         // Temporarily adjust viewport height for fixup computation if messages visible
         let saved_height = self.viewport.params.height;
         self.viewport.params.height = text_height;
-        let action = self.viewport.compute_fixup(dot.line, dot.column, line_count);
+        let action = self
+            .viewport
+            .compute_fixup(dot.line, dot.column, line_count);
         self.viewport.params.height = saved_height;
 
         match &action {
@@ -81,7 +83,7 @@ impl Screen {
                 self.viewport.apply_fixup(&action);
             }
             FixupAction::Redraw => {
-                self.viewport.center_on(dot.line, dot.column);
+                self.viewport.center_on(dot.line, dot.column, line_count);
             }
         }
 
@@ -249,13 +251,19 @@ impl Screen {
 
     /// Update the message row content and position cursor at a given column.
     /// Used by command_input to keep the prompt line in sync with the cell buffer.
-    pub fn update_message_row(&mut self, terminal: &mut dyn Terminal, content: &str, cursor_col: usize) {
+    pub fn update_message_row(
+        &mut self,
+        terminal: &mut dyn Terminal,
+        content: &str,
+        cursor_col: usize,
+    ) {
         let height = self.viewport.params.height;
         let width = self.viewport.params.width;
         let row = height - 1;
 
         self.next.clear_row(row);
-        self.next.write_str(0, row, &content[..content.len().min(width)]);
+        self.next
+            .write_str(0, row, &content[..content.len().min(width)]);
         // Copy all other rows from current
         for r in 0..row {
             self.next.copy_row_from(r, &self.current, r);
@@ -364,7 +372,11 @@ mod tests {
             .filter(|op| matches!(op, MockOp::WriteStr(_)))
             .collect();
         // At least the 3 content lines + EOF marker should have been written
-        assert!(write_ops.len() >= 4, "Expected at least 4 writes, got: {:?}", write_ops);
+        assert!(
+            write_ops.len() >= 4,
+            "Expected at least 4 writes, got: {:?}",
+            write_ops
+        );
     }
 
     #[test]
@@ -399,10 +411,11 @@ mod tests {
         assert_eq!(screen.msg_rows, 1);
 
         // Check that terminal ops include the message content
-        assert!(term
-            .ops
-            .iter()
-            .any(|op| matches!(op, MockOp::WriteStr(s) if s.contains("Test message"))));
+        assert!(
+            term.ops
+                .iter()
+                .any(|op| matches!(op, MockOp::WriteStr(s) if s.contains("Test message")))
+        );
     }
 
     #[test]
@@ -440,7 +453,12 @@ mod tests {
             .iter()
             .filter(|op| matches!(op, MockOp::WriteStr(_)))
             .collect();
-        assert_eq!(write_ops.len(), 0, "Expected no writes on unchanged redraw, got: {:?}", write_ops);
+        assert_eq!(
+            write_ops.len(),
+            0,
+            "Expected no writes on unchanged redraw, got: {:?}",
+            write_ops
+        );
     }
 
     #[test]
@@ -466,7 +484,8 @@ mod tests {
         // Should have used terminal scroll_up
         assert!(
             term.ops.iter().any(|op| matches!(op, MockOp::ScrollUp(_))),
-            "Expected ScrollUp in ops: {:?}", term.ops
+            "Expected ScrollUp in ops: {:?}",
+            term.ops
         );
     }
 
@@ -490,8 +509,11 @@ mod tests {
         screen.fixup(&frame, &mut term);
 
         assert!(
-            term.ops.iter().any(|op| matches!(op, MockOp::ScrollDown(_))),
-            "Expected ScrollDown in ops: {:?}", term.ops
+            term.ops
+                .iter()
+                .any(|op| matches!(op, MockOp::ScrollDown(_))),
+            "Expected ScrollDown in ops: {:?}",
+            term.ops
         );
     }
 
@@ -530,14 +552,21 @@ mod tests {
             .collect();
 
         // 2 newly revealed lines: LINE-05 and LINE-06 (due to margin)
-        assert_eq!(write_ops.len(), 2, "Expected 2 writes for new rows, got: {:?}", write_ops);
+        assert_eq!(
+            write_ops.len(),
+            2,
+            "Expected 2 writes for new rows, got: {:?}",
+            write_ops
+        );
         assert!(
             write_ops[0].contains("LINE-05"),
-            "Expected newly revealed line, got: {:?}", write_ops
+            "Expected newly revealed line, got: {:?}",
+            write_ops
         );
         assert!(
             write_ops[1].contains("LINE-06"),
-            "Expected newly revealed line, got: {:?}", write_ops
+            "Expected newly revealed line, got: {:?}",
+            write_ops
         );
     }
 }

@@ -46,18 +46,13 @@ fn main() {
     // Interactive mode: stdin is a terminal AND -M (batch) was not specified.
     let interactive = io::stdin().is_terminal() && !args.batch;
 
-    let maybe_path = args
-        .file
-        .map(|s| {
-            if std::path::Path::new(&s).exists() {
-                fs::canonicalize(&s)
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string()
-            } else {
-                s
-            }
-        });
+    let maybe_path = args.file.map(|s| {
+        if std::path::Path::new(&s).exists() {
+            fs::canonicalize(&s).unwrap().to_string_lossy().to_string()
+        } else {
+            s
+        }
+    });
 
     if interactive {
         run_interactive(maybe_path);
@@ -146,7 +141,10 @@ fn run_batch(maybe_path: Option<String>) {
     for line in output {
         println!("{}", line);
     }
-    if !failed && editor.modified() && let Some(path) = maybe_path.as_ref() {
+    if !failed
+        && editor.modified()
+        && let Some(path) = maybe_path.as_ref()
+    {
         fs::rename(path, format!("{}~1", path)).unwrap();
         let mut contents = editor.to_string();
         if !contents.is_empty() && !contents.ends_with('\n') {

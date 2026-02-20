@@ -416,7 +416,10 @@ impl Frame {
         self.delete_line_range(from_line, to_line);
         // Dot was after the deleted range, so mark update already shifted it up.
         // Just preserve the column.
-        self.set_dot(Position::new(original_dot.line - count, original_dot.column));
+        self.set_dot(Position::new(
+            original_dot.line - count,
+            original_dot.column,
+        ));
         self.set_mark(MarkId::Modified);
         self.set_mark_at(MarkId::Equals, original_dot);
         CmdResult::Success
@@ -532,11 +535,7 @@ impl Frame {
         mode: CaseMode,
     ) {
         // Collect the characters we need to change
-        let chars: Vec<char> = self
-            .rope
-            .chars_at(start_idx)
-            .take(count)
-            .collect();
+        let chars: Vec<char> = self.rope.chars_at(start_idx).take(count).collect();
 
         let new_chars: Vec<char> = match mode {
             CaseMode::Upper => chars.iter().map(|c| c.to_ascii_uppercase()).collect(),

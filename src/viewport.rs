@@ -105,12 +105,10 @@ impl Viewport {
             (FixupAction::None, FixupAction::None) => FixupAction::None,
             (FixupAction::None, FixupAction::SlideH(off)) => FixupAction::SlideH(off),
             (FixupAction::ScrollV(n), FixupAction::None) => FixupAction::ScrollV(n),
-            (FixupAction::ScrollV(n), FixupAction::SlideH(off)) => {
-                FixupAction::ScrollAndSlide {
-                    scroll_v: n,
-                    new_offset: off,
-                }
-            }
+            (FixupAction::ScrollV(n), FixupAction::SlideH(off)) => FixupAction::ScrollAndSlide {
+                scroll_v: n,
+                new_offset: off,
+            },
             (FixupAction::Redraw, _) | (_, FixupAction::Redraw) => FixupAction::Redraw,
             _ => FixupAction::Redraw,
         }
@@ -236,8 +234,17 @@ impl Viewport {
     }
 
     /// Center the viewport on a given dot position (for Redraw fixup).
-    pub fn center_on(&mut self, dot_line: usize, dot_col: usize) {
-        self.top_line = dot_line.saturating_sub(self.params.height / 2);
+    /// Clamps top_line so EOF never floats above the bottom row.
+    pub fn center_on(&mut self, dot_line: usize, dot_col: usize, line_count: usize) {
+        let height = self.params.height;
+        self.top_line = dot_line.saturating_sub(height / 2);
+        // Clamp: EOF (at line_count) should be at the bottom row at most
+        if line_count >= height {
+            let max_top = line_count - height + 1;
+            if self.top_line > max_top {
+                self.top_line = max_top;
+            }
+        }
         if dot_col >= self.params.width {
             self.offset = dot_col.saturating_sub(self.params.width / 2);
         } else {
@@ -314,9 +321,18 @@ mod tests {
     #[test]
     fn test_center_on() {
         let mut vp = Viewport::new(ViewportParams::new(24, 80));
-        vp.center_on(50, 10);
+        vp.center_on(50, 10, 100);
         assert_eq!(vp.top_line, 38); // 50 - 12
         assert_eq!(vp.offset, 0);
+    }
+
+    #[test]
+    fn test_center_on_clamps_near_eof() {
+        // height=24, line_count=30, dot at line 29 (last content line)
+        // Unclamped: top_line = 29 - 12 = 17, but max_top = 30 - 24 + 1 = 7
+        let mut vp = Viewport::new(ViewportParams::new(24, 80));
+        vp.center_on(29, 0, 30);
+        assert_eq!(vp.top_line, 7);
     }
 
     #[test]

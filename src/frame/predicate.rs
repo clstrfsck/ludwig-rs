@@ -191,7 +191,13 @@ impl Frame {
         for (i, pattern_ch) in pattern.chars().enumerate() {
             let ach = line_start
                 .and_then(|line_start| self.rope.get_char(line_start + pos.column + i))
-                .map(|c| if case_sensitive { c } else { c.to_ascii_lowercase() })
+                .map(|c| {
+                    if case_sensitive {
+                        c
+                    } else {
+                        c.to_ascii_lowercase()
+                    }
+                })
                 .unwrap_or(' ');
             let pch = if case_sensitive {
                 pattern_ch

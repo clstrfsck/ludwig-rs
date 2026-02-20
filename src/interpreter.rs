@@ -4,9 +4,11 @@
 //! them against a [`Frame`]. It handles control flow including compound commands with
 //! repetition, exit handlers, and exit level unwinding (XS/XF/XA).
 
-use crate::frame::{CaseMode, EditCommands, MotionCommands, PredicateCommands, SearchCommands, WordCommands};
-use crate::{CmdFailure, CmdResult, Frame, LeadParam, TrailParam};
 use crate::code::*;
+use crate::frame::{
+    CaseMode, EditCommands, MotionCommands, PredicateCommands, SearchCommands, WordCommands,
+};
+use crate::{CmdFailure, CmdResult, Frame, LeadParam, TrailParam};
 
 /// Execute compiled code against a frame. Top-level entry point.
 ///
@@ -146,12 +148,7 @@ fn apply_exit_handler(
 }
 
 /// Dispatch a CmdOp to the appropriate Frame method.
-fn dispatch_cmd(
-    frame: &mut Frame,
-    op: CmdOp,
-    lead: LeadParam,
-    tpars: &[TrailParam],
-) -> CmdResult {
+fn dispatch_cmd(frame: &mut Frame, op: CmdOp, lead: LeadParam, tpars: &[TrailParam]) -> CmdResult {
     match op {
         CmdOp::Advance => frame.cmd_advance(lead),
         CmdOp::Jump => frame.cmd_jump(lead),
@@ -238,10 +235,22 @@ mod tests {
 
     #[test]
     fn test_unwrap_passes_through_other_outcomes() {
-        assert_eq!(unwrap_exit_level(ExecOutcome::Success), ExecOutcome::Success);
-        assert_eq!(unwrap_exit_level(ExecOutcome::Failure), ExecOutcome::Failure);
+        assert_eq!(
+            unwrap_exit_level(ExecOutcome::Success),
+            ExecOutcome::Success
+        );
+        assert_eq!(
+            unwrap_exit_level(ExecOutcome::Failure),
+            ExecOutcome::Failure
+        );
         assert_eq!(unwrap_exit_level(ExecOutcome::Abort), ExecOutcome::Abort);
-        assert_eq!(unwrap_exit_level(ExecOutcome::ExitSuccessAll), ExecOutcome::ExitSuccessAll);
-        assert_eq!(unwrap_exit_level(ExecOutcome::ExitFailureAll), ExecOutcome::ExitFailureAll);
+        assert_eq!(
+            unwrap_exit_level(ExecOutcome::ExitSuccessAll),
+            ExecOutcome::ExitSuccessAll
+        );
+        assert_eq!(
+            unwrap_exit_level(ExecOutcome::ExitFailureAll),
+            ExecOutcome::ExitFailureAll
+        );
     }
 }

@@ -281,11 +281,7 @@ mod tests {
         let mut term = MockTerminal::new(10, 5);
         CellBuffer::diff(&a, &b, &mut term);
         // No move_cursor or write_str ops should be emitted
-        assert!(
-            term.ops.is_empty(),
-            "Expected no ops, got: {:?}",
-            term.ops
-        );
+        assert!(term.ops.is_empty(), "Expected no ops, got: {:?}", term.ops);
     }
 
     #[test]
