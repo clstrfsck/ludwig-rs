@@ -7,11 +7,11 @@ description = "A reimplementation of the Ludwig text editor in Rust."
 license = "MIT"
 
 [dependencies]
-anyhow = "1.0.101"
-clap = { version = "4.5.58", features = ["derive"] }
+anyhow = "1.0.102"
+clap = { version = "4.5.60", features = ["derive"] }
 itertools = "0.14.0"
 phf = { version = "0.13.1", features = ["macros"] }
-crossterm = "0.28"
+crossterm = "0.29.0"
 ropey = { version = "1.6", default-features = false, features = ["cr_lines", "simd"] }
 
 [dev-dependencies]

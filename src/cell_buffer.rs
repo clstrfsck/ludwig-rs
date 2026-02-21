@@ -24,6 +24,76 @@ pub struct CellBuffer {
     height: usize,
 }
 
+struct ExpansionRows {
+    size: usize,
+    focus: Option<usize>,
+    over: Option<usize>,
+    under: Option<usize>,
+    emit_under_next: bool,
+}
+
+impl ExpansionRows {
+    /// Create an iterator that emits row indices in the order they should be updated
+    /// to expand from the focus row outwards, alternating below and above.
+    /// For example, with size=5 and focus=2, the order is: 2, 3, 1, 4, 0.
+    fn from(size: usize, focus: usize) -> Self {
+        if size == 0 {
+            return ExpansionRows {
+                size,
+                focus: None,
+                over: None,
+                under: None,
+                emit_under_next: false,
+            };
+        }
+
+        let clamped_focus = focus.min(size - 1);
+
+        ExpansionRows {
+            size,
+            focus: Some(clamped_focus),
+            over: clamped_focus.checked_sub(1),
+            under: if clamped_focus + 1 < size { Some(clamped_focus + 1) } else { None },
+            emit_under_next: true,
+        }
+    }
+}
+
+impl Iterator for ExpansionRows {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.size == 0 {
+            return None;
+        }
+
+        if let Some(focus) = self.focus {
+            self.focus = None;
+            return Some(focus);
+        }
+
+        loop {
+            if self.emit_under_next {
+                self.emit_under_next = false;
+                if let Some(under) = self.under {
+                    self.under = if under + 1 < self.size { Some(under + 1) } else { None };
+                    return Some(under);
+                }
+            } else {
+                self.emit_under_next = true;
+                if let Some(over) = self.over {
+                    self.over = if over > 0 { Some(over - 1) } else { None };
+                    return Some(over);
+                }
+            }
+
+            if self.under.is_none() && self.over.is_none() {
+                return None;
+            }
+        }
+    }
+}
+
 impl CellBuffer {
     /// Create a new buffer filled with spaces.
     pub fn new(width: usize, height: usize) -> Self {
@@ -164,11 +234,16 @@ impl CellBuffer {
     /// cursor moves, since a cursor move costs ~6 bytes vs 1 byte per character.
     const GAP_THRESHOLD: usize = 4;
 
-    pub fn diff(current: &CellBuffer, next: &CellBuffer, terminal: &mut dyn Terminal) {
+    pub fn diff(
+        current: &CellBuffer,
+        next: &CellBuffer,
+        terminal: &mut dyn Terminal,
+        focus_row: usize,
+    ) {
         let height = current.height.min(next.height);
         let width = current.width.min(next.width);
 
-        for row in 0..height {
+        for row in ExpansionRows::from(height, focus_row) {
             let row_base_cur = row * current.width;
             let row_base_next = row * next.width;
 
@@ -275,11 +350,25 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_expansion_order() {
+        let rows: Vec<_> = ExpansionRows::from(5, 2).collect();
+        assert_eq!(rows, vec![2, 3, 1, 4, 0]);
+
+        // Focus past end is clamped to the last row.
+        let clamped: Vec<_> = ExpansionRows::from(5, 99).collect();
+        assert_eq!(clamped, vec![4, 3, 2, 1, 0]);
+
+        // Empty size yields no rows.
+        let empty: Vec<_> = ExpansionRows::from(0, 0).collect();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
     fn test_diff_no_changes() {
         let a = CellBuffer::new(10, 5);
         let b = CellBuffer::new(10, 5);
         let mut term = MockTerminal::new(10, 5);
-        CellBuffer::diff(&a, &b, &mut term);
+        CellBuffer::diff(&a, &b, &mut term, 0);
         // No move_cursor or write_str ops should be emitted
         assert!(term.ops.is_empty(), "Expected no ops, got: {:?}", term.ops);
     }
@@ -291,7 +380,7 @@ mod tests {
         next.set(3, 2, Cell { ch: 'X' });
 
         let mut term = MockTerminal::new(10, 5);
-        CellBuffer::diff(&current, &next, &mut term);
+        CellBuffer::diff(&current, &next, &mut term, 0);
 
         assert_eq!(term.ops.len(), 2);
         assert_eq!(term.ops[0], MockOp::MoveCursor(3, 2));
@@ -305,7 +394,7 @@ mod tests {
         next.write_str(2, 0, "abc");
 
         let mut term = MockTerminal::new(10, 1);
-        CellBuffer::diff(&current, &next, &mut term);
+        CellBuffer::diff(&current, &next, &mut term, 0);
 
         // Should be one move + one write, not three separate writes
         assert_eq!(term.ops.len(), 2);
@@ -321,7 +410,7 @@ mod tests {
         next.set(5, 2, Cell { ch: 'B' });
 
         let mut term = MockTerminal::new(10, 3);
-        CellBuffer::diff(&current, &next, &mut term);
+        CellBuffer::diff(&current, &next, &mut term, 0);
 
         assert_eq!(term.ops.len(), 4);
         assert_eq!(term.ops[0], MockOp::MoveCursor(0, 0));
@@ -340,7 +429,7 @@ mod tests {
         next.set(5, 0, Cell { ch: 'C' });
 
         let mut term = MockTerminal::new(10, 1);
-        CellBuffer::diff(&current, &next, &mut term);
+        CellBuffer::diff(&current, &next, &mut term, 0);
 
         // Short gap is coalesced: one run "AB  C" at col 1
         assert_eq!(term.ops.len(), 2);
@@ -357,7 +446,7 @@ mod tests {
         next.set(10, 0, Cell { ch: 'B' });
 
         let mut term = MockTerminal::new(20, 1);
-        CellBuffer::diff(&current, &next, &mut term);
+        CellBuffer::diff(&current, &next, &mut term, 0);
 
         // Two separate runs due to long gap
         assert_eq!(term.ops.len(), 4);

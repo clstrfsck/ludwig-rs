@@ -14,9 +14,9 @@ pub struct Screen {
     /// The viewport tracking visible region.
     pub viewport: Viewport,
     /// What is currently on the terminal screen.
-    current: CellBuffer,
+    current: Box<CellBuffer>,
     /// What we are rendering into before diffing.
-    next: CellBuffer,
+    next: Box<CellBuffer>,
     /// Number of bottom rows currently used for messages.
     pub msg_rows: usize,
 }
@@ -24,14 +24,20 @@ pub struct Screen {
 /// Marker text for end of file.
 const EOF_MARKER: &str = "<End of File>";
 
+enum RelativeToEOF {
+    Before,
+    At,
+    After,
+}
+
 impl Screen {
     pub fn new(term_size: TermSize) -> Self {
         let height = term_size.height as usize;
         let width = term_size.width as usize;
         Self {
             viewport: Viewport::new(ViewportParams::new(height, width)),
-            current: CellBuffer::new(width, height),
-            next: CellBuffer::new(width, height),
+            current: Box::new(CellBuffer::new(width, height)),
+            next: Box::new(CellBuffer::new(width, height)),
             msg_rows: 0,
         }
     }
@@ -112,7 +118,8 @@ impl Screen {
         for row in text_height..height {
             self.next.copy_row_from(row, &self.current, row);
         }
-        CellBuffer::diff(&self.current, &self.next, terminal);
+        let dot_line = frame.dot().line - self.viewport.top_line;
+        CellBuffer::diff(&self.current, &self.next, terminal, dot_line);
         std::mem::swap(&mut self.current, &mut self.next);
     }
 
@@ -156,6 +163,38 @@ impl Screen {
         self.current.shift_rows(0, text_height, amount);
     }
 
+    fn at_or_past_last_line(&self, frame: &Frame, line: usize) -> RelativeToEOF {
+        let line_count = frame.line_count();
+
+        if line_count == 0 {
+            return if line == 0 {
+                RelativeToEOF::At
+            } else {
+                RelativeToEOF::After
+            };
+        }
+
+        let last_line = line_count - 1;
+
+        if line < last_line {
+            RelativeToEOF::Before
+        } else if line == last_line {
+            if frame.line_len(last_line) == 0 {
+                RelativeToEOF::At
+            } else {
+                RelativeToEOF::Before
+            }
+        } else if line == line_count {
+            if frame.line_len(last_line) != 0 {
+                RelativeToEOF::At
+            } else {
+                RelativeToEOF::After
+            }
+        } else {
+            RelativeToEOF::After
+        }
+    }
+
     /// Build the visible portion of a frame line as a string.
     fn build_line_content(
         &self,
@@ -164,21 +203,10 @@ impl Screen {
         offset: usize,
         width: usize,
     ) -> String {
-        let line_count = frame.line_count();
-
-        if frame_line >= line_count {
-            // Past end of file — show EOF marker on the first line past end, blank after
-            if frame_line == line_count {
-                let marker = EOF_MARKER;
-                if offset < marker.len() {
-                    let visible = &marker[offset..];
-                    if visible.len() > width {
-                        return visible[..width].to_string();
-                    }
-                    return visible.to_string();
-                }
-            }
-            return String::new();
+        match self.at_or_past_last_line(frame, frame_line) {
+            RelativeToEOF::Before => {}
+            RelativeToEOF::At => return EOF_MARKER.to_string(),
+            RelativeToEOF::After => return String::new(),
         }
 
         // Get the line content
@@ -244,7 +272,7 @@ impl Screen {
         for r in 0..row {
             self.next.copy_row_from(r, &self.current, r);
         }
-        CellBuffer::diff(&self.current, &self.next, terminal);
+        CellBuffer::diff(&self.current, &self.next, terminal, row);
         std::mem::swap(&mut self.current, &mut self.next);
         terminal.flush();
     }
@@ -268,7 +296,7 @@ impl Screen {
         for r in 0..row {
             self.next.copy_row_from(r, &self.current, r);
         }
-        CellBuffer::diff(&self.current, &self.next, terminal);
+        CellBuffer::diff(&self.current, &self.next, terminal, row);
         std::mem::swap(&mut self.current, &mut self.next);
         terminal.move_cursor(cursor_col as u16, row as u16);
         terminal.flush();
@@ -291,7 +319,10 @@ impl Screen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::terminal::{MockOp, MockTerminal, TermSize};
+    use crate::{
+        EditCommands, LeadParam, TrailParam,
+        terminal::{MockOp, MockTerminal, TermSize},
+    };
 
     #[test]
     fn test_screen_new() {
@@ -328,12 +359,27 @@ mod tests {
     }
 
     #[test]
-    fn test_build_line_content_eof_marker() {
+    fn test_build_line_content_eof_marker_blank_line() {
         let screen = Screen::new(TermSize {
             width: 80,
             height: 24,
         });
-        let frame = Frame::from_str("hello");
+        let frame = Frame::from_str("hello\n");
+        let lc = frame.line_count();
+        // EOF marker appears on the last line if it is blank
+        let content = screen.build_line_content(&frame, lc - 1, 0, 80);
+        assert_eq!(content, "<End of File>");
+    }
+
+    #[test]
+    fn test_build_line_content_eof_marker_nonblank_line() {
+        let screen = Screen::new(TermSize {
+            width: 80,
+            height: 24,
+        });
+        let mut frame = Frame::from_str("hello\n");
+        frame.set_dot(crate::Position::new(1, 0));
+        frame.cmd_insert_text(LeadParam::None, &TrailParam::from_str("/world"));
         let lc = frame.line_count();
         // EOF marker appears on the first line past the end
         let content = screen.build_line_content(&frame, lc, 0, 80);

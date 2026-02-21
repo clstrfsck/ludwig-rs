@@ -4,6 +4,8 @@
 //! - `CrosstermTerminal` for real terminal interaction
 //! - `MockTerminal` for testing
 
+use std::io::Write;
+
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyEvent};
 
@@ -152,7 +154,6 @@ impl Terminal for CrosstermTerminal {
     }
 
     fn flush(&mut self) {
-        use std::io::Write;
         std::io::stdout().flush().ok();
     }
 
