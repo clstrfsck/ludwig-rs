@@ -7,7 +7,7 @@
 use std::io::Write;
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyEvent};
+use crossterm::event::{Event, KeyEvent};
 
 /// Terminal dimensions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +67,7 @@ pub trait Terminal {
 /// Real terminal using crossterm.
 pub struct CrosstermTerminal {
     size: TermSize,
+    cursor_visible: bool,
 }
 
 impl Default for CrosstermTerminal {
@@ -83,6 +84,17 @@ impl CrosstermTerminal {
                 width: w,
                 height: h,
             },
+            cursor_visible: true,
+        }
+    }
+
+    fn cursor(&mut self, show: bool) {
+        if show && !self.cursor_visible {
+            crossterm::execute!(std::io::stdout(), crossterm::cursor::Show,).ok();
+            self.cursor_visible = true;
+        } else if !show && self.cursor_visible {
+            crossterm::execute!(std::io::stdout(), crossterm::cursor::Hide,).ok();
+            self.cursor_visible = false;
         }
     }
 }
@@ -90,11 +102,8 @@ impl CrosstermTerminal {
 impl Terminal for CrosstermTerminal {
     fn init(&mut self) -> Result<()> {
         crossterm::terminal::enable_raw_mode()?;
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::EnterAlternateScreen,
-            crossterm::cursor::Show
-        )?;
+        crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen,)?;
+        self.cursor(false);
         let (w, h) = crossterm::terminal::size()?;
         self.size = TermSize {
             width: w,
@@ -104,7 +113,11 @@ impl Terminal for CrosstermTerminal {
     }
 
     fn cleanup(&mut self) -> Result<()> {
-        crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::cursor::Show
+        )?;
         crossterm::terminal::disable_raw_mode()?;
         Ok(())
     }
@@ -118,10 +131,18 @@ impl Terminal for CrosstermTerminal {
     }
 
     fn write_str(&mut self, s: &str) {
+        // We use the heuristic of hiding the cursor when writing text, but not
+        // e.g. when moving the cursor.  This gives reasonable behaviour on
+        // MacOS, which I'm using.  Other systems may need a different approach.
+        self.cursor(false);
         crossterm::execute!(std::io::stdout(), crossterm::style::Print(s)).ok();
     }
 
     fn write_char(&mut self, ch: char) {
+        // We use the heuristic of hiding the cursor when writing text, but not
+        // e.g. when moving the cursor.  This gives reasonable behaviour on
+        // MacOS, which I'm using.  Other systems may need a different approach.
+        self.cursor(false);
         crossterm::execute!(std::io::stdout(), crossterm::style::Print(ch)).ok();
     }
 
@@ -158,8 +179,9 @@ impl Terminal for CrosstermTerminal {
     }
 
     fn read_key(&mut self) -> Result<KeyEvent> {
+        self.cursor(true);
         loop {
-            match event::read()? {
+            match crossterm::event::read()? {
                 Event::Key(key) => return Ok(key),
                 Event::Resize(w, h) => {
                     self.size = TermSize {

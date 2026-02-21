@@ -53,7 +53,11 @@ impl ExpansionRows {
             size,
             focus: Some(clamped_focus),
             over: clamped_focus.checked_sub(1),
-            under: if clamped_focus + 1 < size { Some(clamped_focus + 1) } else { None },
+            under: if clamped_focus + 1 < size {
+                Some(clamped_focus + 1)
+            } else {
+                None
+            },
             emit_under_next: true,
         }
     }
@@ -76,7 +80,11 @@ impl Iterator for ExpansionRows {
             if self.emit_under_next {
                 self.emit_under_next = false;
                 if let Some(under) = self.under {
-                    self.under = if under + 1 < self.size { Some(under + 1) } else { None };
+                    self.under = if under + 1 < self.size {
+                        Some(under + 1)
+                    } else {
+                        None
+                    };
                     return Some(under);
                 }
             } else {
