@@ -20,6 +20,9 @@ pub trait WordCommands {
     /// YD: Delete the same words that YA would advance over.
     fn cmd_word_delete(&mut self, lead_param: LeadParam) -> CmdResult;
 
+    /// YS: Squeeze multiple consecutive spaces into single spaces within lines.
+    fn cmd_line_squeeze(&mut self, lead_param: LeadParam) -> CmdResult;
+
     /// Ditto Up ("): Copy character(s) from line above at current column.
     fn cmd_ditto_up(&mut self, lead_param: LeadParam) -> CmdResult;
 
@@ -95,6 +98,104 @@ impl WordCommands for Frame {
         self.set_mark(MarkId::Modified);
 
         CmdResult::Success
+    }
+
+    fn cmd_line_squeeze(&mut self, lead_param: LeadParam) -> CmdResult {
+        let (mut count, is_pindef) = match lead_param {
+            LeadParam::Pindef => (usize::MAX, true),
+            LeadParam::None | LeadParam::Plus => (1, false),
+            LeadParam::Pint(n) => (n, false),
+            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        // Pre-check (for non-pindef, non-zero count): verify that `count` consecutive
+        // non-empty lines exist starting from dot.line, and that a line follows the
+        // last one (needed to advance dot after processing).
+        if !is_pindef && count > 0 {
+            let start_line = self.dot().line;
+            for i in 0..count {
+                let check_line = start_line + i;
+                if check_line >= self.lines()
+                    || line_length_excluding_newline(&self.rope, check_line) == 0
+                {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+            }
+            if start_line + count >= self.lines() {
+                return CmdResult::Failure(CmdFailure::OutOfRange);
+            }
+        }
+
+        // Main loop: process one line per iteration.
+        while count > 0 {
+            let line = self.dot().line;
+            let line_len = line_length_excluding_newline(&self.rope, line);
+
+            // Stop if current line is empty (pindef succeeds; pint checked by pre-check).
+            if line_len == 0 {
+                break;
+            }
+
+            // EOP check: must have a next line to advance dot into.
+            if line + 1 >= self.lines() {
+                if is_pindef {
+                    break;
+                }
+                return CmdResult::Failure(CmdFailure::OutOfRange);
+            }
+
+            // Skip leading spaces (ASCII space only, matching C++ behaviour).
+            let mut start = {
+                let line_start = self.rope.line_to_char(line);
+                let mut s = 0usize;
+                while s < line_len && self.rope.char(line_start + s) == ' ' {
+                    s += 1;
+                }
+                s
+            };
+
+            // Inner loop: find and squeeze runs of 2+ spaces.
+            loop {
+                let line_len = line_length_excluding_newline(&self.rope, line);
+                let line_start = self.rope.line_to_char(line);
+
+                // Skip the current word (non-space chars).
+                while start < line_len && self.rope.char(line_start + start) != ' ' {
+                    start += 1;
+                }
+
+                // If at or past end of line, this line is done.
+                if start >= line_len {
+                    break;
+                }
+
+                // Found a space; scan to end of the space run.
+                let mut end = start;
+                while end < line_len && self.rope.char(line_start + end) == ' ' {
+                    end += 1;
+                }
+
+                if end - start > 1 {
+                    // More than one space: delete [start, end-1), keeping the last space.
+                    self.delete(Position::new(line, start), Position::new(line, end - 1));
+                    // `start` stays at the same column (now the single remaining space).
+                } else {
+                    // Exactly one space: move past it.
+                    start = end;
+                }
+            }
+
+            // Advance to next line and record the modification.
+            count = count.saturating_sub(1);
+            self.set_dot(Position::new(line + 1, 0));
+            self.set_mark(MarkId::Modified);
+        }
+
+        if count == 0 || is_pindef {
+            CmdResult::Success
+        } else {
+            CmdResult::Failure(CmdFailure::OutOfRange)
+        }
     }
 
     fn cmd_ditto_up(&mut self, lead_param: LeadParam) -> CmdResult {

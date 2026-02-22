@@ -1,15 +1,17 @@
-//! The Editor wraps a Frame and provides a high-level interface for executing
+//! The Editor wraps a FrameSet and provides a high-level interface for executing
 //! compiled Ludwig commands.
 
 use std::fmt;
 
 use crate::Frame;
+use crate::exec_context::ExecutionContext;
+use crate::frame_set::FrameSet;
 use crate::interpreter;
 use crate::{MarkId, code::*};
 
-/// An editor instance that wraps a Frame and provides command execution.
+/// An editor instance that wraps a FrameSet and provides command execution.
 pub struct Editor {
-    frame: Frame,
+    frame_set: FrameSet,
 }
 
 impl Default for Editor {
@@ -22,7 +24,7 @@ impl Editor {
     /// Create a new empty editor.
     pub fn new() -> Self {
         Editor {
-            frame: Frame::new(),
+            frame_set: FrameSet::new(Frame::new()),
         }
     }
 
@@ -30,23 +32,23 @@ impl Editor {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         Editor {
-            frame: Frame::from_str(s),
+            frame_set: FrameSet::new(Frame::from_str(s)),
         }
     }
 
     /// Get a reference to the current frame.
     pub fn current_frame(&self) -> &Frame {
-        &self.frame
+        self.frame_set.current_frame()
     }
 
     /// Get a mutable reference to the current frame.
     pub fn current_frame_mut(&mut self) -> &mut Frame {
-        &mut self.frame
+        self.frame_set.current_frame_mut()
     }
 
     /// Check if the frame has been modified.
     pub fn modified(&self) -> bool {
-        self.frame.get_mark(MarkId::Modified).is_some()
+        self.current_frame().get_mark(MarkId::Modified).is_some()
     }
 
     /// Execute compiled code against the frame.
@@ -54,13 +56,14 @@ impl Editor {
     /// This delegates to the interpreter module which handles all control flow,
     /// exit handlers, and command dispatch.
     pub fn execute(&mut self, code: &CompiledCode) -> ExecOutcome {
-        interpreter::execute(&mut self.frame, code)
+        let mut ctx = ExecutionContext::new(&mut self.frame_set);
+        interpreter::execute(&mut ctx, code)
     }
 }
 
 impl fmt::Display for Editor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.frame)
+        write!(f, "{}", self.frame_set.current_frame())
     }
 }
 
@@ -663,11 +666,212 @@ mod tests {
     }
 
     #[test]
+    fn test_line_squeeze_basic() {
+        // Multiple spaces within a line get collapsed to one.
+        let (editor, outcome) = exec("hello   world\n", "YS");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello world\n");
+        // Dot advances to start of next line (line 1, col 0).
+        assert_eq!(editor.current_frame().dot(), Position::new(1, 0));
+    }
+
+    #[test]
+    fn test_line_squeeze_leading_spaces_preserved() {
+        // Leading spaces are not removed, only internal multi-space runs.
+        let (editor, outcome) = exec("   hello   world\n", "YS");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "   hello world\n");
+    }
+
+    #[test]
+    fn test_line_squeeze_already_single_spaces() {
+        // A line with only single spaces between words is unchanged.
+        let (editor, outcome) = exec("hello world\n", "YS");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello world\n");
+    }
+
+    #[test]
+    fn test_line_squeeze_multiple_lines() {
+        // 2YS processes two lines.
+        let (editor, outcome) = exec("foo   bar\nbaz   qux\n", "2YS");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "foo bar\nbaz qux\n");
+    }
+
+    #[test]
+    fn test_line_squeeze_empty_line_fails() {
+        // YS on an empty line fails.
+        let (editor, outcome) = exec("\nhello world\n", "YS");
+        assert_eq!(outcome, ExecOutcome::Failure);
+        // Frame is unchanged.
+        assert_eq!(editor.to_string(), "\nhello world\n");
+    }
+
+    #[test]
+    fn test_line_squeeze_pint_precheck_fails_on_empty() {
+        // 2YS fails if either of the two lines is empty.
+        let (_, outcome) = exec("foo   bar\n\nbaz   qux\n", "2YS");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_line_squeeze_sets_modified_mark() {
+        let (editor, outcome) = exec("foo   bar\n", "YS");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // MARK_MODIFIED set to (1, 0) — the dot position after advancing to next line.
+        assert_eq!(
+            editor.current_frame().get_mark(MarkId::Modified),
+            Some(Position::new(1, 0))
+        );
+    }
+
+    #[test]
     fn test_get_then_replace_at_match() {
         // Use G to find text, then use Equals mark for delete
         let (editor, outcome) = exec("hello world\n", "G/world/ =D");
         assert_eq!(outcome, ExecOutcome::Success);
         // G finds "world", dot=11, Equals=6. =D deletes from dot to Equals mark.
         assert_eq!(editor.to_string(), "hello \n");
+    }
+
+    // --- Span command tests ---
+
+    #[test]
+    fn test_span_define_dot_to_mark1() {
+        // 1M SD/myspan/ — mark 1 at dot (0,0), advance 5, define span from (0,0) to (0,5)
+        let (editor, outcome) = exec("hello world\n", "1M 5J SD/myspan/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Span "MYSPAN" should be in the registry pointing to current frame
+        assert!(editor.frame_set.spans.get("myspan").is_some());
+        let span = editor.frame_set.spans.get("myspan").unwrap();
+        assert_eq!(span.frame_name, "LUDWIG");
+    }
+
+    #[test]
+    fn test_span_name_case_insensitive() {
+        // Define with MixedCase, find with lowercase
+        let (editor, outcome) = exec("hello\n", "1M 5J SD/MySpan/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert!(editor.frame_set.spans.get("myspan").is_some());
+        assert!(editor.frame_set.spans.get("MYSPAN").is_some());
+    }
+
+    #[test]
+    fn test_span_assign_literal() {
+        // SA/x/hello/ creates span "X" in HEAP with content "hello"
+        let (editor, outcome) = exec("", "SA/x/hello/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        let span = editor.frame_set.spans.get("X").unwrap();
+        assert_eq!(span.frame_name, "HEAP");
+        // Read span text from HEAP
+        let heap = editor.frame_set.get_frame("HEAP").unwrap();
+        let start = heap.get_mark(span.mark_start).unwrap();
+        let end = heap.get_mark(span.mark_end).unwrap();
+        let start_idx = start.to_char_index(heap.rope());
+        let end_idx = end.to_char_index(heap.rope());
+        let text: String = heap.rope().slice(start_idx..end_idx).to_string();
+        assert_eq!(text, "hello");
+    }
+
+    #[test]
+    fn test_span_assign_updates_existing() {
+        // SA/x/hello/ then SA/x/bye/ — second replaces first
+        let (editor, outcome) = exec("", "SA/x/hello/ SA/x/bye/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        let span = editor.frame_set.spans.get("X").unwrap();
+        let heap = editor.frame_set.get_frame("HEAP").unwrap();
+        let start = heap.get_mark(span.mark_start).unwrap();
+        let end = heap.get_mark(span.mark_end).unwrap();
+        let start_idx = start.to_char_index(heap.rope());
+        let end_idx = end.to_char_index(heap.rope());
+        let text: String = heap.rope().slice(start_idx..end_idx).to_string();
+        assert_eq!(text, "bye");
+    }
+
+    #[test]
+    fn test_span_copy_inserts_text() {
+        // SA/x/world/ creates span "x" = "world" in HEAP.
+        // SC/x/ inserts "world" at current dot (col 0 of "hello\n").
+        let (editor, outcome) = exec("hello\n", "SA/x/world/ SC/x/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "worldhello\n");
+    }
+
+    #[test]
+    fn test_span_copy_n_times() {
+        // SA/x/ab/ then 2SC/x/ inserts "ab" twice
+        let (editor, outcome) = exec("\n", "SA/x/ab/ 2SC/x/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "abab\n");
+    }
+
+    #[test]
+    fn test_span_transfer_empties_source() {
+        // SA creates span "x" = "world" in HEAP. 5J moves to end of "hello".
+        // ST transfers "world" from HEAP → current frame; HEAP's span marks collapse.
+        // Since the source is a different frame, the current frame's dot is unaffected by the delete.
+        let (editor, outcome) = exec("hello\n", "SA/x/world/ 5J ST/x/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "helloworld\n");
+    }
+
+    #[test]
+    fn test_span_jump_to_end() {
+        // Define span, jump to its end
+        let (editor, outcome) = exec("hello world\n", "1M 5J SD/s/ 0J SJ/s/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // mark_end of span "s" is at col 5 (dot when SD was called)
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 5));
+    }
+
+    #[test]
+    fn test_span_jump_to_start() {
+        // Define span, jump to its start
+        let (editor, outcome) = exec("hello world\n", "1M 5J SD/s/ -SJ/s/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // mark_start of span "s" is at col 0 (mark 1 position when SD was called)
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 0));
+    }
+
+    #[test]
+    fn test_span_recompile() {
+        // SA stores "2A" as span text; SR compiles it
+        let (editor, outcome) = exec("line1\nline2\n", "SA/cmd/2A/ SR/cmd/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // span "CMD" should now have compiled code
+        let span = editor.frame_set.spans.get("CMD").unwrap();
+        assert!(span.code.is_some());
+    }
+
+    #[test]
+    fn test_span_assign_span_ref() {
+        // SA/x/hello/ creates span x; SA$y$x$ sets y to the same content
+        let (editor, outcome) = exec("", "SA/x/hello/ SA$y$x$");
+        assert_eq!(outcome, ExecOutcome::Success);
+        let span_y = editor.frame_set.spans.get("Y").unwrap();
+        let heap = editor.frame_set.get_frame("HEAP").unwrap();
+        let start = heap.get_mark(span_y.mark_start).unwrap();
+        let end = heap.get_mark(span_y.mark_end).unwrap();
+        let start_idx = start.to_char_index(heap.rope());
+        let end_idx = end.to_char_index(heap.rope());
+        let text: String = heap.rope().slice(start_idx..end_idx).to_string();
+        assert_eq!(text, "hello");
+    }
+
+    #[test]
+    fn test_span_bounds_survive_insert_before() {
+        // Define span, insert text before span, verify bounds shift.
+        // ,J (Nindef-J) jumps to column 0. Then I/abc/ inserts at (0,0).
+        // mark_start was at (0,0), mark_end at (0,5); both are AT or AFTER the
+        // insert point, so both shift right by 3.
+        let (editor, outcome) = exec("hello\n", "1M 5J SD/s/ ,J I/abc/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        let span = editor.frame_set.spans.get("S").unwrap();
+        let frame = editor.frame_set.get_frame("LUDWIG").unwrap();
+        let start = frame.get_mark(span.mark_start).unwrap();
+        let end = frame.get_mark(span.mark_end).unwrap();
+        assert_eq!(start, Position::new(0, 3)); // was 0, shifted by 3
+        assert_eq!(end, Position::new(0, 8)); // was 5, shifted by 3
     }
 }

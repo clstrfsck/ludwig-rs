@@ -13,6 +13,8 @@ pub enum MarkId {
     Equals,
     Modified,
     Numbered(u8),
+    /// Dynamically allocated span boundary mark. IDs are monotone and never reused.
+    SpanBound(u32),
 }
 
 /// Manages all marks in a frame.

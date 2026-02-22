@@ -26,6 +26,8 @@ pub struct Frame {
     rope: Rope,
     /// All marks (including dot) in this frame.
     marks: MarkSet,
+    /// Monotone counter for allocating fresh `SpanBound` mark IDs.
+    next_bound_id: u32,
 }
 
 impl fmt::Display for Frame {
@@ -41,6 +43,7 @@ impl Frame {
         Self {
             rope: Rope::new(),
             marks: MarkSet::new(),
+            next_bound_id: 0,
         }
     }
 
@@ -53,6 +56,7 @@ impl Frame {
         Self {
             rope: r,
             marks: MarkSet::new(),
+            next_bound_id: 0,
         }
     }
 }
@@ -77,19 +81,31 @@ impl Frame {
         self.marks.set(id, self.dot())
     }
 
-    /// Create a new mark at a specific position.
-    fn set_mark_at(&mut self, id: MarkId, pos: Position) {
+    /// Set a mark at a specific position.
+    pub fn set_mark_at(&mut self, id: MarkId, pos: Position) {
         self.marks.set(id, pos)
     }
 
     /// Unset a mark.
-    fn unset_mark(&mut self, id: MarkId) {
+    pub fn unset_mark(&mut self, id: MarkId) {
         self.marks.unset(id);
     }
 
     /// Get the position of a mark.
     fn mark_position(&self, id: MarkId) -> Option<Position> {
         self.marks.get(id)
+    }
+
+    /// Allocate two fresh `SpanBound` mark IDs. IDs are monotone and never reused.
+    ///
+    /// The returned `MarkId::SpanBound` values are NOT yet placed in the `MarkSet`;
+    /// call [`set_mark_at`](Frame::set_mark_at) to record their positions.
+    pub fn alloc_span_bounds(&mut self) -> (MarkId, MarkId) {
+        let a = self.next_bound_id;
+        self.next_bound_id += 1;
+        let b = self.next_bound_id;
+        self.next_bound_id += 1;
+        (MarkId::SpanBound(a), MarkId::SpanBound(b))
     }
 
     fn lines(&self) -> usize {
@@ -173,7 +189,7 @@ impl Frame {
     ///
     /// If the position is in virtual space, materializes the space first.
     /// Updates all marks appropriately.
-    fn insert_at(&mut self, pos: Position, text: &str) {
+    pub fn insert_at(&mut self, pos: Position, text: &str) {
         if text.is_empty() {
             return;
         }
@@ -248,7 +264,7 @@ impl Frame {
     ///
     /// Positions are clamped to actual text (virtual space is ignored).
     /// Updates all marks appropriately.
-    fn delete(&mut self, from: Position, to: Position) -> bool {
+    pub fn delete(&mut self, from: Position, to: Position) -> bool {
         // Ensure from <= to
         let (from, to) = if from <= to { (from, to) } else { (to, from) };
 

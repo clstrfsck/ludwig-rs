@@ -452,6 +452,41 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
         tpar_count: 2
     },
+    "sa" => CmdInfo {
+        op: CmdOp::SpanAssign,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 2
+    },
+    "sc" => CmdInfo {
+        op: CmdOp::SpanCopy,
+        allowed_leads: lead_param_mask!(None, Plus, Pint),
+        tpar_count: 1
+    },
+    "sd" => CmdInfo {
+        op: CmdOp::SpanDefine,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Marker),
+        tpar_count: 1
+    },
+    "si" => CmdInfo {
+        op: CmdOp::SpanIndex,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "sj" => CmdInfo {
+        op: CmdOp::SpanJump,
+        allowed_leads: lead_param_mask!(None, Plus, Minus),
+        tpar_count: 1
+    },
+    "sr" => CmdInfo {
+        op: CmdOp::SpanCompile,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 1
+    },
+    "st" => CmdInfo {
+        op: CmdOp::SpanTransfer,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 1
+    },
     "sw" => CmdInfo {
         op: CmdOp::SwapLine,
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),
@@ -510,6 +545,11 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
     "yd" => CmdInfo {
         op: CmdOp::WordDelete,
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
+        tpar_count: 0
+    },
+    "ys" => CmdInfo {
+        op: CmdOp::LineSquash,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
         tpar_count: 0
     },
     "xa" => CmdInfo {
