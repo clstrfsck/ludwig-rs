@@ -621,6 +621,48 @@ mod tests {
     }
 
     #[test]
+    fn test_word_delete_forward_one() {
+        // Delete the first word (and trailing space) — same line, no newline re-insertion.
+        let (editor, outcome) = exec("hello world\n", "YD");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "world\n");
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 0));
+    }
+
+    #[test]
+    fn test_word_delete_from_middle_of_word() {
+        // Dot in the middle of "world"; YD should delete from word-start to next word start.
+        let (editor, outcome) = exec("hello world test\n", "8J YD");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // "world " deleted, leaving "hello test"
+        assert_eq!(editor.to_string(), "hello test\n");
+    }
+
+    #[test]
+    fn test_word_delete_n_words() {
+        let (editor, outcome) = exec("hello world test\n", "2YD");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "test\n");
+    }
+
+    #[test]
+    fn test_word_delete_cross_line() {
+        // Deleting the last word on a line ("world") advances into next line.
+        // The newline must be re-inserted to preserve the line boundary.
+        let (editor, outcome) = exec("hello world\nnext para\n", "7J YD");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello \nnext para\n");
+    }
+
+    #[test]
+    fn test_word_delete_backward_one() {
+        // Dot at "world"; -YD deletes the previous word ("hello ").
+        let (editor, outcome) = exec("hello world\n", "6J -YD");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "world\n");
+    }
+
+    #[test]
     fn test_get_then_replace_at_match() {
         // Use G to find text, then use Equals mark for delete
         let (editor, outcome) = exec("hello world\n", "G/world/ =D");

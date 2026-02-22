@@ -507,6 +507,11 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
         tpar_count: 0
     },
+    "yd" => CmdInfo {
+        op: CmdOp::WordDelete,
+        allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
+        tpar_count: 0
+    },
     "xa" => CmdInfo {
         op: CmdOp::ExitAbort,
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef, Marker),

@@ -181,6 +181,7 @@ fn dispatch_cmd(frame: &mut Frame, op: CmdOp, lead: LeadParam, tpars: &[TrailPar
         CmdOp::SwapLine => frame.cmd_swap_line(lead),
         CmdOp::Get => frame.cmd_get(lead, &tpars[0]),
         CmdOp::WordAdvance => frame.cmd_word_advance(lead),
+        CmdOp::WordDelete => frame.cmd_word_delete(lead),
         CmdOp::DittoUp => frame.cmd_ditto_up(lead),
         CmdOp::DittoDown => frame.cmd_ditto_down(lead),
         // Window commands are no-ops in batch mode; handled by App in interactive mode.

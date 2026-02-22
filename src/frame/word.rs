@@ -17,6 +17,9 @@ pub trait WordCommands {
     /// `<YA` = beginning of current paragraph.
     fn cmd_word_advance(&mut self, lead_param: LeadParam) -> CmdResult;
 
+    /// YD: Delete the same words that YA would advance over.
+    fn cmd_word_delete(&mut self, lead_param: LeadParam) -> CmdResult;
+
     /// Ditto Up ("): Copy character(s) from line above at current column.
     fn cmd_ditto_up(&mut self, lead_param: LeadParam) -> CmdResult;
 
@@ -36,6 +39,62 @@ impl WordCommands for Frame {
             LeadParam::Nindef => self.word_advance_paragraph_backward(),
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
         }
+    }
+
+    fn cmd_word_delete(&mut self, lead_param: LeadParam) -> CmdResult {
+        if matches!(lead_param, LeadParam::Marker(_)) {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
+        }
+
+        let original_dot = self.dot();
+
+        // Step 1: Get to the start of the current word.
+        // A single backward scan iteration that leaves dot at the beginning
+        // of whatever word it's in.
+        let word_start = match self.find_current_word_start(original_dot.line, original_dot.column)
+        {
+            Some((l, c)) => Position::new(l, c),
+            None => return CmdResult::Failure(CmdFailure::OutOfRange),
+        };
+
+        // Step 2: Advance word(s) from word_start to find the deletion endpoint.
+        let advance_end = match self.find_word_delete_end(word_start, lead_param) {
+            Some(pos) => pos,
+            None => return CmdResult::Failure(CmdFailure::OutOfRange),
+        };
+
+        // Save advance_end column before any modification.
+        // Used to re-establish the correct indentation if the deletion crossed a line.
+        let advance_end_col = advance_end.column;
+
+        // Step 3: Determine ordered deletion range.
+        let (del_start, del_end) = if advance_end >= word_start {
+            (word_start, advance_end)
+        } else {
+            (advance_end, word_start)
+        };
+
+        let start_line = del_start.line;
+        let end_line = del_end.line;
+
+        // Step 4: Delete text. If nothing is deleted (same position) treat as failure.
+        if !self.delete(del_start, del_end) {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
+        }
+        self.set_dot(del_start);
+
+        // Step 5: If the deletion crossed a line boundary, re-insert the newline.
+        // The indent reproduces the original indentation of the advance-end position.
+        if start_line != end_line {
+            let indent = " ".repeat(advance_end_col);
+            self.insert(&format!("\n{indent}"));
+        }
+
+        // Step 6: Update marks.
+        self.set_mark_at(MarkId::Equals, original_dot);
+        self.set_mark(MarkId::Modified);
+
+        CmdResult::Success
     }
 
     fn cmd_ditto_up(&mut self, lead_param: LeadParam) -> CmdResult {
@@ -95,6 +154,129 @@ fn line_is_blank(rope: &ropey::Rope, line: usize) -> bool {
 
 // Private helpers for word commands
 impl Frame {
+    /// Find the start of the word at (line, col).
+    ///
+    /// If the cursor is in the middle of a word, returns the word's first character;
+    /// if it is already at a word start, it stays there; if it is in whitespace, it
+    /// returns the start of the preceding word.
+    fn find_current_word_start(&self, mut line: usize, mut col: usize) -> Option<(usize, usize)> {
+        let mut line_len = line_length_excluding_newline(&self.rope, line);
+
+        if col >= line_len {
+            col = line_len.saturating_sub(1);
+        }
+
+        // If the line is empty go to the previous non-empty line.
+        if line_len == 0 {
+            let (pl, plen) = self.goto_prev_nonempty_line(line)?;
+            line = pl;
+            line_len = plen;
+            col = line_len.saturating_sub(1);
+        }
+
+        // Step 2: skip whitespace backward.
+        {
+            let lc = self.rope.line(line);
+            while col > 0 && lc.char(col).is_whitespace() {
+                col -= 1;
+            }
+            // Step 3: if we are at col==0 and it is still whitespace, jump to the
+            // previous non-empty line.
+            if col == 0 && line_length_excluding_newline(&self.rope, line) > 0 && lc.char(0).is_whitespace() {
+                let (pl, _plen) = self.goto_prev_nonempty_line(line)?;
+                line = pl;
+                col = line_length_excluding_newline(&self.rope, line).saturating_sub(1);
+            }
+        }
+
+        // Step 4: scan backward while char(col)!=' ' and col > 0.
+        {
+            let lc = self.rope.line(line);
+            while col > 0 && !lc.char(col).is_whitespace() {
+                col -= 1;
+            }
+        }
+
+        // Step 5: if now pointing at a space, advance one to reach the word start.
+        {
+            let lc = self.rope.line(line);
+            let ll = line_length_excluding_newline(&self.rope, line);
+            if col < ll && lc.char(col).is_whitespace() {
+                col += 1;
+            }
+        }
+
+        Some((line, col))
+    }
+
+    /// Compute the deletion end-point for YD, starting from `word_start`.
+    ///
+    /// Uses low-level finders directly to avoid side-effects on marks.
+    /// Returns None if the advance is not possible (triggers failure).
+    fn find_word_delete_end(&self, word_start: Position, lead_param: LeadParam) -> Option<Position> {
+        match lead_param {
+            LeadParam::None | LeadParam::Plus => self.find_next_word_start_from(word_start),
+            LeadParam::Pint(0) => None, // delete 0 words → failure
+            LeadParam::Pint(n) => {
+                let mut pos = word_start;
+                for _ in 0..n {
+                    pos = self.find_next_word_start_from(pos)?;
+                }
+                Some(pos)
+            }
+            LeadParam::Pindef => {
+                // Advance to start of next paragraph (same logic as word_advance_paragraph_forward).
+                let mut line = word_start.line;
+                while line < self.lines() && !line_is_blank(&self.rope, line) {
+                    line += 1;
+                }
+                self.find_next_word_start_from(Position::new(line, 0))
+            }
+            LeadParam::Minus => {
+                // Go back 1 word from word_start. One call to find_prev_word_start_from
+                // suffices because word_start is already at a word boundary; the cursor-
+                // convention col value happens to give the right previous-word result.
+                let (l, c) = self.find_prev_word_start_from(word_start.line, word_start.column)?;
+                Some(Position::new(l, c))
+            }
+            LeadParam::Nint(n) => {
+                // Go back n words from word_start.
+                let mut l = word_start.line;
+                let mut c = word_start.column;
+                for _ in 0..n {
+                    let (nl, nc) = self.find_prev_word_start_from(l, c)?;
+                    l = nl;
+                    c = nc;
+                }
+                Some(Position::new(l, c))
+            }
+            LeadParam::Nindef => {
+                // Advance to start of previous paragraph (same logic as word_advance_paragraph_backward).
+                let mut line = word_start.line;
+                while line > 0 && line_is_blank(&self.rope, line) {
+                    line -= 1;
+                }
+                while line > 0 && !line_is_blank(&self.rope, line) {
+                    line -= 1;
+                }
+                while line_is_blank(&self.rope, line) {
+                    if line + 1 >= self.lines() {
+                        return None;
+                    }
+                    line += 1;
+                }
+                let pos = self
+                    .rope
+                    .line(line)
+                    .chars()
+                    .position(|ch| !ch.is_whitespace())
+                    .unwrap_or(0);
+                Some(Position::new(line, pos))
+            }
+            _ => None,
+        }
+    }
+
     /// Move forward to the start of the next paragraph.
     /// A paragraph is defined as a block of non-empty lines separated by empty lines.
     fn word_advance_paragraph_forward(&mut self) -> CmdResult {

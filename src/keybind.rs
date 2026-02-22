@@ -63,6 +63,7 @@ pub fn resolve_key(key: KeyEvent) -> KeyAction {
 
         // Escape enters command introducer
         KeyCode::Esc => KeyAction::CommandIntroducer,
+        KeyCode::Char('\\') => KeyAction::CommandIntroducer,
 
         // Printable characters
         KeyCode::Char(ch) => KeyAction::InsertChar(ch),

@@ -309,10 +309,6 @@ impl Frame {
 
         // Start column: for both N and BR, start from dot.column - 1.
         // But for bridge, we don't skip an additional char.
-        // C++ ref: new_col = dot->col - 1; if (!bridge) new_col -= 1;
-        // Ludwig is 1-indexed, ours is 0-indexed, so:
-        //   N:  start at dot.column - 2 (skip dot's char and check one before)
-        //   BR: start at dot.column - 1
         let start_offset: isize = if bridge {
             dot.column as isize - 1
         } else {
@@ -339,7 +335,6 @@ impl Frame {
                         count -= 1;
                         if count == 0 {
                             // Position after found char: col+2 for N offset adjustment
-                            // In the C++ code: new_col += 2 at the end
                             // Since we're at the beginning, result is column 0
                             return Some(Position::new(0, 0));
                         }
