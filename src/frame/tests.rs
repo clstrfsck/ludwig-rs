@@ -6,6 +6,55 @@ use edit::CaseMode;
 use search::SearchCommands;
 
 #[test]
+fn test_calculate_insert_effect() {
+    assert_eq!(calculate_insert_effect(""), (0, 0));
+    assert_eq!(calculate_insert_effect("hello"), (0, 5));
+    assert_eq!(calculate_insert_effect("hello\nworld"), (1, 5));
+    assert_eq!(calculate_insert_effect("line1\nline2\n"), (2, 0));
+}
+
+#[test]
+fn test_line_length() {
+    let rope = Rope::from_str("hello\nworld\n");
+    assert_eq!(line_length_excluding_newline(&rope, 0), 5);
+    assert_eq!(line_length_excluding_newline(&rope, 1), 5);
+
+    // Last line (empty after final newline)
+    assert_eq!(line_length_excluding_newline(&rope, 2), 0);
+}
+
+#[test]
+fn test_line_length_crlf() {
+    // Test CRLF line endings
+    let rope = Rope::from_str("hello\r\nworld\r\n");
+    assert_eq!(line_length_excluding_newline(&rope, 0), 5);
+    assert_eq!(line_length_excluding_newline(&rope, 1), 5);
+
+    // Last line (empty after final CRLF)
+    assert_eq!(line_length_excluding_newline(&rope, 2), 0);
+
+    // Mixed line endings
+    let rope = Rope::from_str("hello\r\nworld\n");
+    assert_eq!(line_length_excluding_newline(&rope, 0), 5);
+    assert_eq!(line_length_excluding_newline(&rope, 1), 5);
+
+    // Lone CR (old Mac style)
+    let rope = Rope::from_str("hello\rworld");
+    assert_eq!(line_length_excluding_newline(&rope, 0), 5);
+}
+
+#[test]
+fn test_unicode_newline_not_supported() {
+    const UNICODE_LINE_BREAKS: &[char] =
+        &['\u{000B}', '\u{000C}', '\u{0085}', '\u{2028}', '\u{2029}'];
+    for &ch in UNICODE_LINE_BREAKS {
+        let rope = Rope::from_str(&format!("line1{}line2", ch));
+        assert_eq!(line_length_excluding_newline(&rope, 0), 11);
+        assert_eq!(rope.len_lines(), 1);
+    }
+}
+
+#[test]
 fn test_new_frame() {
     let frame = Frame::new();
     assert_eq!(frame.to_string(), "");

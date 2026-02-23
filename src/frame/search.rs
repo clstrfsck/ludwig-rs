@@ -532,6 +532,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_char_set_range_wrong_order() {
+        let tp = TrailParam {
+            content: String::from("z..a"),
+            delim: '\'',
+        };
+
+        let result = parse_char_set(&tp);
+        assert!(result.is_empty(), "Expected empty set for range in wrong order");
+    }
+
+    #[test]
     fn test_parse_char_set_range() {
         let tp = TrailParam {
             content: String::from("a..j"),

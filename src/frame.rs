@@ -18,7 +18,7 @@ use std::fmt;
 use ropey::Rope;
 
 use crate::marks::{MarkId, MarkSet};
-use crate::position::{Position, calculate_insert_effect};
+use crate::position::Position;
 
 /// An editable text frame with support for virtual space and marks.
 #[derive(Debug, Default)]
@@ -108,29 +108,7 @@ impl Frame {
     /// Get the length of a line excluding its newline character.
     /// Returns 0 if the line index is out of range.
     pub fn line_length_excluding_newline(&self, line: usize) -> usize {
-        if line >= self.line_count() {
-            return 0;
-        }
-
-        let line_slice = self.rope.line(line);
-        let len = line_slice.len_chars();
-
-        // Check for line endings and exclude them
-        if len >= 1 {
-            let last = line_slice.char(len - 1);
-            if last == '\n' {
-                if len >= 2 {
-                    let second_last = line_slice.char(len - 2);
-                    if second_last == '\r' {
-                        return len - 2;
-                    }
-                }
-                return len - 1;
-            } else if last == '\r' {
-                return len - 1;
-            }
-        }
-        len
+        line_length_excluding_newline(&self.rope, line)
     }
 
     /// Get the length of a line excluding its newline character.
@@ -326,6 +304,45 @@ impl Frame {
 
         Position::new(line, column)
     }
+}
+
+/// Calculate the effect of inserting text: (lines_added, end_column)
+///
+/// Uses Rope to handle multi-line text correctly.
+fn calculate_insert_effect(text: &str) -> (usize, usize) {
+    if text.is_empty() {
+        return (0, 0);
+    }
+    let r = Rope::from_str(text);
+    let lines = r.len_lines();
+    (lines - 1, line_length_excluding_newline(&r, lines - 1))
+}
+
+/// Get the length of a line excluding any trailing newline character.
+pub(crate) fn line_length_excluding_newline(rope: &Rope, line: usize) -> usize {
+    if line >= rope.len_lines() {
+        return 0;
+    }
+
+    let line_slice = rope.line(line);
+    let len = line_slice.len_chars();
+
+    // Check for line endings and exclude them
+    if len >= 1 {
+        let last = line_slice.char(len - 1);
+        if last == '\n' {
+            if len >= 2 {
+                let second_last = line_slice.char(len - 2);
+                if second_last == '\r' {
+                    return len - 2;
+                }
+            }
+            return len - 1;
+        } else if last == '\r' {
+            return len - 1;
+        }
+    }
+    len
 }
 
 /// Global registry of all frames, keyed by UPPERCASE name.
