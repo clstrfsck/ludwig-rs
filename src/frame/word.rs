@@ -5,7 +5,7 @@ use std::cmp::min;
 use crate::cmd_result::{CmdFailure, CmdResult};
 use crate::lead_param::LeadParam;
 use crate::marks::MarkId;
-use crate::position::{Position, line_length_excluding_newline};
+use crate::position::Position;
 
 use super::Frame;
 
@@ -115,13 +115,13 @@ impl WordCommands for Frame {
             let start_line = self.dot().line;
             for i in 0..count {
                 let check_line = start_line + i;
-                if check_line >= self.lines()
-                    || line_length_excluding_newline(&self.rope, check_line) == 0
+                if check_line >= self.line_count()
+                    || self.line_length_excluding_newline(check_line) == 0
                 {
                     return CmdResult::Failure(CmdFailure::OutOfRange);
                 }
             }
-            if start_line + count >= self.lines() {
+            if start_line + count >= self.line_count() {
                 return CmdResult::Failure(CmdFailure::OutOfRange);
             }
         }
@@ -129,7 +129,7 @@ impl WordCommands for Frame {
         // Main loop: process one line per iteration.
         while count > 0 {
             let line = self.dot().line;
-            let line_len = line_length_excluding_newline(&self.rope, line);
+            let line_len = self.line_length_excluding_newline(line);
 
             // Stop if current line is empty (pindef succeeds; pint checked by pre-check).
             if line_len == 0 {
@@ -137,7 +137,7 @@ impl WordCommands for Frame {
             }
 
             // EOP check: must have a next line to advance dot into.
-            if line + 1 >= self.lines() {
+            if line + 1 >= self.line_count() {
                 if is_pindef {
                     break;
                 }
@@ -156,7 +156,7 @@ impl WordCommands for Frame {
 
             // Inner loop: find and squeeze runs of 2+ spaces.
             loop {
-                let line_len = line_length_excluding_newline(&self.rope, line);
+                let line_len = self.line_length_excluding_newline(line);
                 let line_start = self.rope.line_to_char(line);
 
                 // Skip the current word (non-space chars).
@@ -207,7 +207,7 @@ impl WordCommands for Frame {
             LeadParam::None | LeadParam::Plus => 1,
             LeadParam::Pint(n) => n,
             LeadParam::Pindef => {
-                let line_len = line_length_excluding_newline(&self.rope, dot.line - 1);
+                let line_len = self.line_length_excluding_newline(dot.line - 1);
                 if dot.column <= line_len {
                     line_len - dot.column
                 } else {
@@ -225,14 +225,14 @@ impl WordCommands for Frame {
 
     fn cmd_ditto_down(&mut self, lead_param: LeadParam) -> CmdResult {
         let dot = self.dot();
-        if dot.line + 1 >= self.lines() {
+        if dot.line + 1 >= self.line_count() {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
         let count = match lead_param {
             LeadParam::None | LeadParam::Plus => 1,
             LeadParam::Pint(n) => n,
             LeadParam::Pindef => {
-                let line_len = line_length_excluding_newline(&self.rope, dot.line + 1);
+                let line_len = self.line_length_excluding_newline(dot.line + 1);
                 if dot.column <= line_len {
                     line_len - dot.column
                 } else {
@@ -261,7 +261,7 @@ impl Frame {
     /// if it is already at a word start, it stays there; if it is in whitespace, it
     /// returns the start of the preceding word.
     fn find_current_word_start(&self, mut line: usize, mut col: usize) -> Option<(usize, usize)> {
-        let mut line_len = line_length_excluding_newline(&self.rope, line);
+        let mut line_len = self.line_length_excluding_newline(line);
 
         if col >= line_len {
             col = line_len.saturating_sub(1);
@@ -283,10 +283,13 @@ impl Frame {
             }
             // Step 3: if we are at col==0 and it is still whitespace, jump to the
             // previous non-empty line.
-            if col == 0 && line_length_excluding_newline(&self.rope, line) > 0 && lc.char(0).is_whitespace() {
+            if col == 0
+                && self.line_length_excluding_newline(line) > 0
+                && lc.char(0).is_whitespace()
+            {
                 let (pl, _plen) = self.goto_prev_nonempty_line(line)?;
                 line = pl;
-                col = line_length_excluding_newline(&self.rope, line).saturating_sub(1);
+                col = self.line_length_excluding_newline(line).saturating_sub(1);
             }
         }
 
@@ -301,7 +304,7 @@ impl Frame {
         // Step 5: if now pointing at a space, advance one to reach the word start.
         {
             let lc = self.rope.line(line);
-            let ll = line_length_excluding_newline(&self.rope, line);
+            let ll = self.line_length_excluding_newline(line);
             if col < ll && lc.char(col).is_whitespace() {
                 col += 1;
             }
@@ -314,7 +317,11 @@ impl Frame {
     ///
     /// Uses low-level finders directly to avoid side-effects on marks.
     /// Returns None if the advance is not possible (triggers failure).
-    fn find_word_delete_end(&self, word_start: Position, lead_param: LeadParam) -> Option<Position> {
+    fn find_word_delete_end(
+        &self,
+        word_start: Position,
+        lead_param: LeadParam,
+    ) -> Option<Position> {
         match lead_param {
             LeadParam::None | LeadParam::Plus => self.find_next_word_start_from(word_start),
             LeadParam::Pint(0) => None, // delete 0 words → failure
@@ -328,7 +335,7 @@ impl Frame {
             LeadParam::Pindef => {
                 // Advance to start of next paragraph (same logic as word_advance_paragraph_forward).
                 let mut line = word_start.line;
-                while line < self.lines() && !line_is_blank(&self.rope, line) {
+                while line < self.line_count() && !line_is_blank(&self.rope, line) {
                     line += 1;
                 }
                 self.find_next_word_start_from(Position::new(line, 0))
@@ -361,7 +368,7 @@ impl Frame {
                     line -= 1;
                 }
                 while line_is_blank(&self.rope, line) {
-                    if line + 1 >= self.lines() {
+                    if line + 1 >= self.line_count() {
                         return None;
                     }
                     line += 1;
@@ -384,7 +391,7 @@ impl Frame {
         // Get to blank line between paragraphs
         let dot = self.dot();
         let mut line = dot.line;
-        while line < self.lines() && !line_is_blank(&self.rope, line) {
+        while line < self.line_count() && !line_is_blank(&self.rope, line) {
             line += 1;
         }
         let new_pos = match self.find_next_word_start_from(Position::new(line, 0)) {
@@ -411,7 +418,7 @@ impl Frame {
         }
         // Find first non-blank
         while line_is_blank(&self.rope, line) {
-            if line + 1 >= self.lines() {
+            if line + 1 >= self.line_count() {
                 return CmdResult::Failure(CmdFailure::OutOfRange);
             }
             line += 1;
@@ -432,7 +439,7 @@ impl Frame {
     fn word_advance_backward(&mut self, count: usize) -> CmdResult {
         let dot = self.dot();
         let mut line = dot.line;
-        let mut pos = min(dot.column, line_length_excluding_newline(&self.rope, line));
+        let mut pos = min(dot.column, self.line_length_excluding_newline(line));
 
         for i in 0..=count {
             // Find start of previous word (or current word if i==0)
@@ -496,7 +503,7 @@ impl Frame {
                 return None;
             }
             line -= 1;
-            let len = line_length_excluding_newline(&self.rope, line);
+            let len = self.line_length_excluding_newline(line);
             if len > 0 {
                 return Some((line, len));
             }
@@ -526,8 +533,8 @@ impl Frame {
         let mut col = pos.column;
 
         // First, skip over the current word (non-space chars)
-        while line < self.lines() {
-            let line_len = line_length_excluding_newline(&self.rope, line);
+        while line < self.line_count() {
+            let line_len = self.line_length_excluding_newline(line);
             let line_start = self.rope.line_to_char(line);
 
             while col < line_len {
@@ -552,8 +559,8 @@ impl Frame {
             col = 0;
 
             // If next line starts with non-space, that's the word start
-            if line < self.lines() {
-                let next_line_len = line_length_excluding_newline(&self.rope, line);
+            if line < self.line_count() {
+                let next_line_len = self.line_length_excluding_newline(line);
                 if next_line_len > 0 {
                     let next_line_start = self.rope.line_to_char(line);
                     let ch = self.rope.char(next_line_start);
@@ -574,11 +581,11 @@ impl Frame {
         if direction < 0 && dot.line == 0 {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
-        if direction > 0 && source_line >= self.lines() {
+        if direction > 0 && source_line >= self.line_count() {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
 
-        let source_line_len = line_length_excluding_newline(&self.rope, source_line);
+        let source_line_len = self.line_length_excluding_newline(source_line);
         let source_line_start = self.rope.line_to_char(source_line);
 
         let original_dot = dot;

@@ -3,7 +3,7 @@
 use crate::cmd_result::{CmdFailure, CmdResult};
 use crate::lead_param::LeadParam;
 use crate::marks::MarkId;
-use crate::position::{Position, line_length_excluding_newline};
+use crate::position::Position;
 use crate::trail_param::TrailParam;
 
 use super::Frame;
@@ -72,8 +72,8 @@ impl EditCommands for Frame {
 
     fn cmd_insert_text(&mut self, lead_param: LeadParam, text: &TrailParam) -> CmdResult {
         match lead_param {
-            LeadParam::None | LeadParam::Plus => self.cmd_ins_text(1, &text.str),
-            LeadParam::Pint(n) => self.cmd_ins_text(n, &text.str),
+            LeadParam::None | LeadParam::Plus => self.cmd_ins_text(1, &text.content),
+            LeadParam::Pint(n) => self.cmd_ins_text(n, &text.content),
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
         }
     }
@@ -83,7 +83,7 @@ impl EditCommands for Frame {
             LeadParam::None | LeadParam::Plus => self.cmd_del_forward(1),
             LeadParam::Pint(n) => self.cmd_del_forward(n),
             LeadParam::Pindef => {
-                self.cmd_del_forward(line_length_excluding_newline(&self.rope, self.dot().line))
+                self.cmd_del_forward(self.line_length_excluding_newline(self.dot().line))
             }
             LeadParam::Minus => self.cmd_del_backward(1),
             LeadParam::Nint(n) => self.cmd_del_backward(n),
@@ -94,8 +94,8 @@ impl EditCommands for Frame {
 
     fn cmd_overtype_text(&mut self, lead_param: LeadParam, text: &TrailParam) -> CmdResult {
         match lead_param {
-            LeadParam::None | LeadParam::Plus => self.cmd_ovr_text(1, &text.str),
-            LeadParam::Pint(n) => self.cmd_ovr_text(n, &text.str),
+            LeadParam::None | LeadParam::Plus => self.cmd_ovr_text(1, &text.content),
+            LeadParam::Pint(n) => self.cmd_ovr_text(n, &text.content),
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
         }
     }
@@ -104,7 +104,7 @@ impl EditCommands for Frame {
         if lead_param == LeadParam::None {
             let original_dot = self.dot();
             // We are not going to extend the line, so just clamp the dot to the actual text.
-            let clamped_dot = original_dot.clamp_to_text(&self.rope);
+            let clamped_dot = self.clamp_to_text(&original_dot);
             self.set_dot(clamped_dot);
             self.insert_at(Position::new(clamped_dot.line, clamped_dot.column), "\n");
             self.set_mark(MarkId::Modified);
@@ -120,7 +120,7 @@ impl EditCommands for Frame {
             LeadParam::None | LeadParam::Plus => self.case_change_forward(1, mode),
             LeadParam::Pint(n) => self.case_change_forward(n, mode),
             LeadParam::Pindef => {
-                let line_len = line_length_excluding_newline(&self.rope, self.dot().line);
+                let line_len = self.line_length_excluding_newline(self.dot().line);
                 let count = line_len.saturating_sub(self.dot().column);
                 self.case_change_forward(count, mode)
             }
@@ -146,7 +146,7 @@ impl EditCommands for Frame {
     }
 
     fn cmd_delete_line(&mut self, lead_param: LeadParam) -> CmdResult {
-        let num_lines = self.lines();
+        let num_lines = self.line_count();
         let dot = self.dot();
         match lead_param {
             LeadParam::None | LeadParam::Plus => {
@@ -193,7 +193,7 @@ impl EditCommands for Frame {
                 self.kill_lines_backward(0, dot.line)
             }
             LeadParam::Marker(id) => {
-                if let Some(mark_pos) = self.mark_position(id) {
+                if let Some(mark_pos) = self.get_mark(id) {
                     if mark_pos.line == dot.line {
                         // Mark is on the same line as dot, so nothing to delete.
                         CmdResult::Success
@@ -215,7 +215,7 @@ impl EditCommands for Frame {
 
     fn cmd_swap_line(&mut self, lead_param: LeadParam) -> CmdResult {
         let dot = self.dot();
-        let num_lines = self.lines();
+        let num_lines = self.line_count();
         let (source_line, dest_line) = match lead_param {
             LeadParam::None | LeadParam::Plus => {
                 // SW: move current line after line below
@@ -255,7 +255,7 @@ impl EditCommands for Frame {
             }
             LeadParam::Marker(id) => {
                 // @SW: move current line to the position of mark m
-                if let Some(mark_pos) = self.mark_position(id) {
+                if let Some(mark_pos) = self.get_mark(id) {
                     (dot.line, mark_pos.line)
                 } else {
                     return CmdResult::Failure(CmdFailure::MarkNotDefined);
@@ -351,7 +351,7 @@ impl Frame {
     }
 
     fn cmd_del_to_mark(&mut self, mark_id: MarkId) -> CmdResult {
-        if let Some(mark_pos) = self.mark_position(mark_id) {
+        if let Some(mark_pos) = self.get_mark(mark_id) {
             if self.delete(self.dot(), mark_pos) {
                 self.set_mark(MarkId::Modified);
             }
@@ -428,7 +428,7 @@ impl Frame {
     /// Delete lines `from_line` through `to_line` (inclusive) from the rope,
     /// updating marks appropriately.
     fn delete_line_range(&mut self, from_line: usize, to_line: usize) {
-        let num_lines = self.lines();
+        let num_lines = self.line_count();
         let is_last_line = to_line + 1 >= num_lines;
 
         if !is_last_line {
@@ -445,7 +445,7 @@ impl Frame {
             self.delete(from_pos, to_pos);
         } else {
             // Deleting all lines from 0 to end.
-            let last_line_len = line_length_excluding_newline(&self.rope, to_line);
+            let last_line_len = self.line_length_excluding_newline(to_line);
             let from_pos = Position::new(0, 0);
             let to_pos = Position::new(to_line, last_line_len);
             self.delete(from_pos, to_pos);
@@ -459,7 +459,7 @@ impl Frame {
     fn move_line(&mut self, source_line: usize, dest_line: usize) {
         // Extract line text (including newline) for source_line
         let start = self.rope.line_to_char(source_line);
-        let end = if source_line + 1 < self.lines() {
+        let end = if source_line + 1 < self.line_count() {
             self.rope.line_to_char(source_line + 1)
         } else {
             self.rope.len_chars()
@@ -482,7 +482,7 @@ impl Frame {
             return CmdResult::Success;
         }
         let dot = self.dot();
-        let line_len = line_length_excluding_newline(&self.rope, dot.line);
+        let line_len = self.line_length_excluding_newline(dot.line);
         // In virtual space or nothing to change
         if dot.column >= line_len {
             return CmdResult::Success;
@@ -508,7 +508,7 @@ impl Frame {
         if dot.column == 0 {
             return CmdResult::Success;
         }
-        let line_len = line_length_excluding_newline(&self.rope, dot.line);
+        let line_len = self.line_length_excluding_newline(dot.line);
         // Clamp dot to actual text for the purpose of the backward range
         let effective_col = dot.column.min(line_len);
         let actual_count = count.min(effective_col);

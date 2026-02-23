@@ -16,14 +16,12 @@ pub enum CmdFailure {
     MarkNotDefined,
     /// The leading parameter is not valid for this command.
     SyntaxError,
+    /// A frame with the given name already exists.
+    FrameExists,
 }
 
 impl CmdResult {
     pub fn is_success(&self) -> bool {
         matches!(self, CmdResult::Success)
-    }
-
-    pub fn is_failure(&self) -> bool {
-        matches!(self, CmdResult::Failure(_))
     }
 }

@@ -12,12 +12,13 @@ pub use predicate::PredicateCommands;
 pub use search::SearchCommands;
 pub use word::WordCommands;
 
+use std::collections::HashMap;
 use std::fmt;
 
 use ropey::Rope;
 
 use crate::marks::{MarkId, MarkSet};
-use crate::position::{Position, line_length_excluding_newline};
+use crate::position::{Position, calculate_insert_effect};
 
 /// An editable text frame with support for virtual space and marks.
 #[derive(Debug, Default)]
@@ -26,8 +27,6 @@ pub struct Frame {
     rope: Rope,
     /// All marks (including dot) in this frame.
     marks: MarkSet,
-    /// Monotone counter for allocating fresh `SpanBound` mark IDs.
-    next_bound_id: u32,
 }
 
 impl fmt::Display for Frame {
@@ -43,7 +42,6 @@ impl Frame {
         Self {
             rope: Rope::new(),
             marks: MarkSet::new(),
-            next_bound_id: 0,
         }
     }
 
@@ -56,7 +54,6 @@ impl Frame {
         Self {
             rope: r,
             marks: MarkSet::new(),
-            next_bound_id: 0,
         }
     }
 }
@@ -76,54 +73,33 @@ impl Frame {
         self.marks.get(id)
     }
 
-    /// Create a new mark at the current dot position.
+    /// Create a new mark at the current dot position
     fn set_mark(&mut self, id: MarkId) {
         self.marks.set(id, self.dot())
     }
 
-    /// Set a mark at a specific position.
+    /// Set a mark at a specific position
     pub fn set_mark_at(&mut self, id: MarkId, pos: Position) {
         self.marks.set(id, pos)
     }
 
-    /// Unset a mark.
+    /// Unset a mark
     pub fn unset_mark(&mut self, id: MarkId) {
         self.marks.unset(id);
     }
 
-    /// Get the position of a mark.
-    fn mark_position(&self, id: MarkId) -> Option<Position> {
-        self.marks.get(id)
-    }
-
-    /// Allocate two fresh `SpanBound` mark IDs. IDs are monotone and never reused.
-    ///
-    /// The returned `MarkId::SpanBound` values are NOT yet placed in the `MarkSet`;
-    /// call [`set_mark_at`](Frame::set_mark_at) to record their positions.
-    pub fn alloc_span_bounds(&mut self) -> (MarkId, MarkId) {
-        let a = self.next_bound_id;
-        self.next_bound_id += 1;
-        let b = self.next_bound_id;
-        self.next_bound_id += 1;
-        (MarkId::SpanBound(a), MarkId::SpanBound(b))
-    }
-
-    fn lines(&self) -> usize {
+    /// Get the number of lines in the frame
+    pub fn line_count(&self) -> usize {
         if self.rope.len_chars() == 0 {
             return 0;
         }
         self.rope.len_lines()
     }
 
-    /// Get the number of lines in the frame (public accessor for screen mode).
-    pub fn line_count(&self) -> usize {
-        self.lines()
-    }
-
-    /// Get the content of a line as a RopeSlice, excluding the trailing newline.
+    /// Get the content of a line as a RopeSlice, including the trailing newline.
     /// Returns None if the line index is out of range.
     pub fn line_content(&self, line: usize) -> Option<ropey::RopeSlice<'_>> {
-        if line >= self.lines() {
+        if line >= self.line_count() {
             return None;
         }
         Some(self.rope.line(line))
@@ -131,11 +107,39 @@ impl Frame {
 
     /// Get the length of a line excluding its newline character.
     /// Returns 0 if the line index is out of range.
-    pub fn line_len(&self, line: usize) -> usize {
-        if line >= self.lines() {
+    pub fn line_length_excluding_newline(&self, line: usize) -> usize {
+        if line >= self.line_count() {
             return 0;
         }
-        line_length_excluding_newline(&self.rope, line)
+
+        let line_slice = self.rope.line(line);
+        let len = line_slice.len_chars();
+
+        // Check for line endings and exclude them
+        if len >= 1 {
+            let last = line_slice.char(len - 1);
+            if last == '\n' {
+                if len >= 2 {
+                    let second_last = line_slice.char(len - 2);
+                    if second_last == '\r' {
+                        return len - 2;
+                    }
+                }
+                return len - 1;
+            } else if last == '\r' {
+                return len - 1;
+            }
+        }
+        len
+    }
+
+    /// Get the length of a line excluding its newline character.
+    /// Returns 0 if the line index is out of range.
+    pub fn line_length_including_newline(&self, line: usize) -> usize {
+        if line >= self.line_count() {
+            return 0;
+        }
+        self.rope.line(line).len_chars()
     }
 
     /// Get a reference to the underlying rope (for advanced screen rendering).
@@ -175,7 +179,7 @@ impl Frame {
         }
 
         // Now pad the line with spaces if needed
-        let line_len = line_length_excluding_newline(&self.rope, pos.line);
+        let line_len = self.line_length_excluding_newline(pos.line);
         if pos.column > line_len {
             let spaces_needed = pos.column - line_len;
             let line_start = self.rope.line_to_char(pos.line);
@@ -198,7 +202,7 @@ impl Frame {
         self.materialize_virtual_space(pos);
 
         // Calculate the char index for insertion
-        let char_idx = pos.to_char_index(&self.rope);
+        let char_idx = self.to_char_index(&pos);
 
         // Insert the text
         self.rope.insert(char_idx, text);
@@ -235,15 +239,15 @@ impl Frame {
         self.materialize_virtual_space(pos);
 
         // Figure out how many characters we can replace on this line
-        let line_len = line_length_excluding_newline(&self.rope, pos.line);
+        let line_len = self.line_length_excluding_newline(pos.line);
         let chars_after_cursor = line_len.saturating_sub(pos.column);
 
         // Count chars in text (handling multi-line text)
-        let first_line_chars = line_length_excluding_newline(&Rope::from_str(text), 0);
+        let first_line_chars = Self::first_line_length(text);
         let chars_to_replace = first_line_chars.min(chars_after_cursor);
 
         let (pos, to_insert) = if chars_to_replace > 0 {
-            let overwrite_position = pos.to_char_index(&self.rope);
+            let overwrite_position = self.to_char_index(&pos);
             self.rope
                 .remove(overwrite_position..(overwrite_position + chars_to_replace));
             self.rope
@@ -268,15 +272,15 @@ impl Frame {
         // Ensure from <= to
         let (from, to) = if from <= to { (from, to) } else { (to, from) };
 
-        if from.clamp_to_text(&self.rope) == to.clamp_to_text(&self.rope) {
+        if self.clamp_to_text(&from) == self.clamp_to_text(&to) {
             return false; // Nothing to delete
         }
 
         self.materialize_virtual_space(from);
-        let clamp_to = to.clamp_to_text(&self.rope);
+        let clamp_to = self.clamp_to_text(&to);
 
-        let from_idx = from.to_char_index(&self.rope);
-        let to_idx = clamp_to.to_char_index(&self.rope);
+        let from_idx = self.to_char_index(&from);
+        let to_idx = self.to_char_index(&clamp_to);
 
         // Delete from the rope
         self.rope.remove(from_idx..to_idx);
@@ -285,18 +289,82 @@ impl Frame {
         self.marks.update_after_delete(from, clamp_to);
         true
     }
+
+    fn first_line_length(text: &str) -> usize {
+        text.find(['\r', '\n']).unwrap_or(text.len())
+    }
+
+    /// Convert this position to a char index in the rope.
+    ///
+    /// If the position is in virtual space, this returns the index at the
+    /// end of the line (or end of the document if beyond the last line).
+    pub fn to_char_index(&self, pos: &Position) -> usize {
+        let total_lines = self.rope.len_lines();
+
+        // Clamp line to valid range
+        let line = pos.line.min(total_lines.saturating_sub(1));
+        let line_start = self.rope.line_to_char(line);
+        let line_len = self.line_length_excluding_newline(line);
+
+        // Clamp column to actual line length
+        let column = pos.column.min(line_len);
+
+        line_start + column
+    }
+
+    /// Clamp this position to be within the actual text (no virtual space).
+    pub fn clamp_to_text(&self, pos: &Position) -> Position {
+        let total_lines = self.rope.len_lines();
+
+        if total_lines == 0 {
+            return Position::zero();
+        }
+
+        let line = pos.line.min(total_lines.saturating_sub(1));
+        let line_len = self.line_length_excluding_newline(line);
+        let column = pos.column.min(line_len);
+
+        Position::new(line, column)
+    }
 }
 
-/// Calculate the effect of inserting text: (lines_added, end_column)
-///
-/// Uses Rope to handle multi-line text correctly.
-fn calculate_insert_effect(text: &str) -> (usize, usize) {
-    if text.is_empty() {
-        return (0, 0);
+/// Global registry of all frames, keyed by UPPERCASE name.
+pub(crate) struct FrameRegistry {
+    frames: HashMap<String, Frame>,
+}
+
+impl Default for FrameRegistry {
+    fn default() -> Self {
+        Self::new()
     }
-    let r = Rope::from_str(text);
-    let lines = r.len_lines();
-    (lines - 1, line_length_excluding_newline(&r, lines - 1))
+}
+
+impl FrameRegistry {
+    pub fn new() -> Self {
+        Self {
+            frames: HashMap::new(),
+        }
+    }
+
+    /// Insert or replace a frame by name
+    pub fn insert(&mut self, name: String, frame: Frame) {
+        self.frames.insert(name, frame);
+    }
+
+    /// Look up a frame by name
+    pub fn get(&self, name: &str) -> Option<&Frame> {
+        self.frames.get(name)
+    }
+
+    /// Mutable look-up by name
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Frame> {
+        self.frames.get_mut(name)
+    }
+
+    /// Test whether a frame exists.
+    pub fn contains(&self, name: &str) -> bool {
+        self.frames.contains_key(name)
+    }
 }
 
 #[cfg(test)]

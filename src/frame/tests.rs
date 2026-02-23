@@ -6,14 +6,6 @@ use edit::CaseMode;
 use search::SearchCommands;
 
 #[test]
-fn test_calculate_insert_effect() {
-    assert_eq!(calculate_insert_effect(""), (0, 0));
-    assert_eq!(calculate_insert_effect("hello"), (0, 5));
-    assert_eq!(calculate_insert_effect("hello\nworld"), (1, 5));
-    assert_eq!(calculate_insert_effect("line1\nline2\n"), (2, 0));
-}
-
-#[test]
 fn test_new_frame() {
     let frame = Frame::new();
     assert_eq!(frame.to_string(), "");
@@ -51,7 +43,7 @@ fn test_virtual_space_insert() {
 
     // Move dot to virtual space (column 10 on a 5-char line)
     frame.set_dot(Position::new(0, 10));
-    assert!(frame.dot().column > line_length_excluding_newline(&frame.rope, 0));
+    assert!(frame.dot().column > frame.line_length_excluding_newline(0));
 
     // Insert text - should pad with spaces first
     frame.insert("world");
@@ -81,7 +73,7 @@ fn test_dot_clamped_to_lines() {
 fn test_advance_empty_buffer() {
     let mut frame = Frame::from_str("");
     let result = frame.cmd_advance(LeadParam::None);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
     assert_eq!(frame.to_string(), "");
     assert_eq!(frame.dot(), Position::zero());
 }
@@ -141,7 +133,7 @@ fn test_marks_update_on_insert() {
     frame.insert_at(Position::new(0, 5), " beautiful");
 
     // Mark should have moved
-    assert_eq!(frame.mark_position(end_mark), Some(Position::new(0, 21)));
+    assert_eq!(frame.get_mark(end_mark), Some(Position::new(0, 21)));
 
     assert_eq!(frame.to_string(), "hello beautiful world\n");
 }
@@ -153,14 +145,45 @@ fn test_marks_update_on_delete() {
     // Create a mark at the end
     let end_mark = MarkId::Numbered(1);
     frame.set_mark_at(end_mark, Position::new(0, 21));
-    assert_eq!(frame.mark_position(end_mark), Some(Position::new(0, 21)));
+    assert_eq!(frame.get_mark(end_mark), Some(Position::new(0, 21)));
 
     // Delete " beautiful"
     frame.delete(Position::new(0, 5), Position::new(0, 15));
 
     // Mark should have moved back
-    assert_eq!(frame.mark_position(end_mark), Some(Position::new(0, 11)));
+    assert_eq!(frame.get_mark(end_mark), Some(Position::new(0, 11)));
     assert_eq!(frame.to_string(), "hello world\n");
+}
+
+#[test]
+fn test_position_to_char_index() {
+    let frame = Frame::from_str("hello\nworld\n");
+
+    // Normal positions
+    assert_eq!(frame.to_char_index(&Position::new(0, 0)), 0);
+    assert_eq!(frame.to_char_index(&Position::new(0, 3)), 3);
+    assert_eq!(frame.to_char_index(&Position::new(1, 0)), 6);
+    assert_eq!(frame.to_char_index(&Position::new(1, 3)), 9);
+
+    // Virtual space clamps to end of line
+    assert_eq!(frame.to_char_index(&Position::new(0, 100)), 5);
+}
+
+#[test]
+fn test_position_clamp_to_text() {
+    let frame = Frame::from_str("hello\nworld\n");
+
+    // Clamp virtual column to line length
+    assert_eq!(
+        frame.clamp_to_text(&Position::new(0, 100)),
+        Position::new(0, 5)
+    );
+
+    // Clamp virtual line to last line
+    assert_eq!(
+        frame.clamp_to_text(&Position::new(10, 2)),
+        Position::new(2, 0)
+    );
 }
 
 // Insert Line (L command)
@@ -267,7 +290,7 @@ fn insert_line_shifts_marks_below() {
 fn insert_line_rejects_invalid_lead_param() {
     let mut f = Frame::from_str("hello");
     let result = f.cmd_insert_line(LeadParam::Pindef);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 // Insert Char (C command)
@@ -381,7 +404,7 @@ fn insert_char_at_beginning_of_line() {
 fn insert_char_rejects_invalid_lead_param() {
     let mut f = Frame::from_str("hello");
     let result = f.cmd_insert_char(LeadParam::Pindef);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 const M1: MarkId = MarkId::Numbered(1);
@@ -443,7 +466,7 @@ fn delete_backward_past_beginning_of_line_fails() {
     let mut f = Frame::from_str("hello\n");
     f.marks.set(MarkId::Dot, Position::new(0, 0));
     let result = f.cmd_delete_char(LeadParam::Minus);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
     assert_eq!(f.rope.to_string(), "hello\n");
     assert_eq!(f.marks.get(MarkId::Dot).unwrap(), Position::new(0, 0));
     assert_eq!(f.marks.get(MarkId::Modified), None);
@@ -816,7 +839,7 @@ fn case_edit_non_alpha_triggers_uppercase() {
 fn case_change_rejects_marker_lead() {
     let mut f = Frame::from_str("hello");
     let result = f.cmd_case_change(LeadParam::Marker(MarkId::Dot), CaseMode::Upper);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -898,7 +921,7 @@ fn delete_line_forward_past_end_fails() {
     let mut f = Frame::from_str("line1\nline2\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::Pint(3));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
     assert_eq!(f.to_string(), "line1\nline2\n");
 }
 
@@ -906,7 +929,7 @@ fn delete_line_forward_past_end_fails() {
 fn delete_line_on_empty_frame_fails() {
     let mut f = Frame::new();
     let result = f.cmd_delete_line(LeadParam::None);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -935,7 +958,7 @@ fn delete_line_backward_at_first_line_fails() {
     let mut f = Frame::from_str("hello\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::Minus);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
     assert_eq!(f.to_string(), "hello\n");
 }
 
@@ -944,7 +967,7 @@ fn delete_line_backward_too_many_fails() {
     let mut f = Frame::from_str("line1\nline2\nline3\n");
     f.set_dot(Position::new(1, 0));
     let result = f.cmd_delete_line(LeadParam::Nint(3));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
     assert_eq!(f.to_string(), "line1\nline2\nline3\n");
 }
 
@@ -982,7 +1005,7 @@ fn delete_line_nindef_at_first_fails() {
     let mut f = Frame::from_str("hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::Nindef);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1101,7 +1124,7 @@ fn next_not_found_fails() {
     let mut f = Frame::from_str("hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("z"));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
     // Dot should not move on failure
     assert_eq!(f.dot(), Position::new(0, 0));
 }
@@ -1142,7 +1165,7 @@ fn next_backward_not_found_fails() {
     let mut f = Frame::from_str("hello");
     f.set_dot(Position::new(0, 2));
     let result = f.cmd_next(LeadParam::Minus, &TrailParam::from_str("z"));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
     assert_eq!(f.dot(), Position::new(0, 2));
 }
 
@@ -1161,7 +1184,7 @@ fn next_backward_nth() {
 fn next_rejects_pindef() {
     let mut f = Frame::from_str("hello");
     let result = f.cmd_next(LeadParam::Pindef, &TrailParam::from_str("h"));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1240,7 +1263,7 @@ fn bridge_backward_at_start_succeeds() {
 fn bridge_rejects_pint() {
     let mut f = Frame::from_str("hello");
     let result = f.cmd_bridge(LeadParam::Pint(3), &TrailParam::from_str("h"));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1331,7 +1354,7 @@ fn zl_at_col0_fails() {
     let mut f = Frame::from_str("hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_left(LeadParam::None);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1339,7 +1362,7 @@ fn zl_not_enough_columns_fails() {
     let mut f = Frame::from_str("hello");
     f.set_dot(Position::new(0, 2));
     let result = f.cmd_left(LeadParam::Pint(5));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1356,7 +1379,7 @@ fn zl_rejects_minus() {
     let mut f = Frame::from_str("hello");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_left(LeadParam::Minus);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 // ===== ZR (Cursor Right) tests =====
@@ -1402,7 +1425,7 @@ fn zr_pindef_goes_to_eol() {
 fn zr_rejects_minus() {
     let mut f = Frame::from_str("hello");
     let result = f.cmd_right(LeadParam::Minus);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 // ===== ZU (Cursor Up) tests =====
@@ -1431,7 +1454,7 @@ fn zu_at_first_line_fails() {
     let mut f = Frame::from_str("line1\nline2");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_up(LeadParam::None);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1439,7 +1462,7 @@ fn zu_not_enough_lines_fails() {
     let mut f = Frame::from_str("line1\nline2\nline3");
     f.set_dot(Position::new(1, 0));
     let result = f.cmd_up(LeadParam::Pint(5));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1465,7 +1488,7 @@ fn zu_rejects_minus() {
     let mut f = Frame::from_str("line1\nline2");
     f.set_dot(Position::new(1, 0));
     let result = f.cmd_up(LeadParam::Minus);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 // ===== ZD (Cursor Down) tests =====
@@ -1494,7 +1517,7 @@ fn zd_at_last_line_fails() {
     let mut f = Frame::from_str("line1\nline2\n");
     f.set_dot(Position::new(2, 0));
     let result = f.cmd_down(LeadParam::None);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1502,7 +1525,7 @@ fn zd_not_enough_lines_fails() {
     let mut f = Frame::from_str("line1\nline2\nline3");
     f.set_dot(Position::new(1, 0));
     let result = f.cmd_down(LeadParam::Pint(5));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1528,7 +1551,7 @@ fn zd_rejects_minus() {
     let mut f = Frame::from_str("line1\nline2");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_down(LeadParam::Minus);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 // ===== ZC (Carriage Return) tests =====
@@ -1556,7 +1579,7 @@ fn zc_advance_backward_rejected() {
     let mut f = Frame::from_str("line1\nline2\nline3");
     f.set_dot(Position::new(2, 3));
     let result = f.cmd_return(LeadParam::Minus);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1620,7 +1643,7 @@ fn zz_at_col0_fails() {
     let mut f = Frame::from_str("hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_rubout(LeadParam::None);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1628,7 +1651,7 @@ fn zz_not_enough_chars_fails() {
     let mut f = Frame::from_str("hello");
     f.set_dot(Position::new(0, 2));
     let result = f.cmd_rubout(LeadParam::Pint(5));
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }
 
 #[test]
@@ -1646,5 +1669,5 @@ fn zz_rejects_minus() {
     let mut f = Frame::from_str("hello");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_rubout(LeadParam::Minus);
-    assert!(result.is_failure());
+    assert!(!result.is_success());
 }

@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 use crate::cmd_result::{CmdFailure, CmdResult};
 use crate::lead_param::LeadParam;
 use crate::marks::MarkId;
-use crate::position::{Position, line_length_excluding_newline};
+use crate::position::Position;
 use crate::trail_param::TrailParam;
 
 use super::Frame;
@@ -54,8 +54,8 @@ pub trait PredicateCommands {
 impl PredicateCommands for Frame {
     fn cmd_eol(&mut self, lead_param: LeadParam) -> CmdResult {
         let dot = self.dot();
-        let line_len = if dot.line < self.lines() {
-            line_length_excluding_newline(&self.rope, dot.line)
+        let line_len = if dot.line < self.line_count() {
+            self.line_length_excluding_newline(dot.line)
         } else {
             0
         };
@@ -121,8 +121,8 @@ impl PredicateCommands for Frame {
     }
 
     fn cmd_eqs(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
-        let case_sensitive = tpar.dlm == '"';
-        let cmp = self.text_compare_at(self.dot(), &tpar.str, case_sensitive);
+        let case_sensitive = tpar.delim == '"';
+        let cmp = self.text_compare_at(self.dot(), &tpar.content, case_sensitive);
 
         let result = match lead_param {
             LeadParam::None | LeadParam::Plus => cmp == Ordering::Equal,
@@ -172,13 +172,13 @@ impl PredicateCommands for Frame {
 impl Frame {
     /// Check if dot is at end-of-page (last null line).
     fn is_at_eop(&self) -> bool {
-        let num_lines = self.lines();
+        let num_lines = self.line_count();
         if num_lines == 0 {
             return true;
         }
         // The last line is the null line (the one after the last newline)
         self.dot().line >= num_lines - 1
-            && line_length_excluding_newline(&self.rope, num_lines - 1) == 0
+            && self.line_length_excluding_newline(num_lines - 1) == 0
     }
 
     /// Compare text at a given position with a pattern string.
@@ -226,7 +226,7 @@ fn bool_result(condition: bool) -> CmdResult {
 /// Parse the trailing parameter for EQC as a 1-based column number,
 /// converting to 0-based.
 fn parse_column_tpar(tpar: &TrailParam) -> Option<usize> {
-    let n: usize = tpar.str.trim().parse().ok()?;
+    let n: usize = tpar.content.trim().parse().ok()?;
     if n == 0 {
         return Some(0);
     }
@@ -235,7 +235,7 @@ fn parse_column_tpar(tpar: &TrailParam) -> Option<usize> {
 
 /// Parse the trailing parameter for EQM as a mark identifier.
 fn parse_mark_tpar(tpar: &TrailParam) -> Option<MarkId> {
-    let s = tpar.str.trim();
+    let s = tpar.content.trim();
     match s {
         "=" => Some(MarkId::Equals),
         "%" => Some(MarkId::Modified),

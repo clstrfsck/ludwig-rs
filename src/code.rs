@@ -6,7 +6,17 @@ use crate::trail_param::TrailParam;
 /// A compiled sequence of Ludwig commands.
 #[derive(Debug, Clone)]
 pub struct CompiledCode {
-    pub instructions: Vec<Instruction>,
+    instructions: Vec<Instruction>,
+}
+
+impl CompiledCode {
+    pub fn new(instructions: Vec<Instruction>) -> Self {
+        Self { instructions }
+    }
+
+    pub fn instructions(&self) -> &[Instruction] {
+        &self.instructions
+    }
 }
 
 /// A single compiled instruction.
@@ -25,9 +35,9 @@ pub enum Instruction {
         body: CompiledCode,
         exit_handler: Option<ExitHandler>,
     },
-    /// XS / NXS — exit N nesting levels with success
+    /// XS / nXS — exit `n` nesting levels with success
     ExitSuccess(ExitLevels),
-    /// XF / NXF — exit N nesting levels with failure
+    /// XF / nXF — exit `n` nesting levels with failure
     ExitFailure(ExitLevels),
     /// XA — abort all execution
     ExitAbort,
@@ -54,7 +64,7 @@ pub enum RepeatCount {
 /// How many nesting levels to exit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitLevels {
-    /// NXS / NXF (1 for plain XS/XF)
+    /// nXS / nXF (1 for plain XS/XF)
     Count(usize),
     /// >XS / >XF — exit all levels
     All,
@@ -259,13 +269,6 @@ impl ExecOutcome {
         matches!(
             self,
             ExecOutcome::Success | ExecOutcome::ExitSuccess { .. } | ExecOutcome::ExitSuccessAll
-        )
-    }
-
-    pub fn is_failure(&self) -> bool {
-        matches!(
-            self,
-            ExecOutcome::Failure | ExecOutcome::ExitFailure { .. } | ExecOutcome::ExitFailureAll
         )
     }
 }

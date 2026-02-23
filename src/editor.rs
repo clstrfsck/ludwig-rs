@@ -743,8 +743,8 @@ mod tests {
         let (editor, outcome) = exec("hello world\n", "1M 5J SD/myspan/");
         assert_eq!(outcome, ExecOutcome::Success);
         // Span "MYSPAN" should be in the registry pointing to current frame
-        assert!(editor.frame_set.spans.get("myspan").is_some());
-        let span = editor.frame_set.spans.get("myspan").unwrap();
+        assert!(editor.frame_set.get_span("myspan").is_some());
+        let span = editor.frame_set.get_span("myspan").unwrap();
         assert_eq!(span.frame_name, "LUDWIG");
     }
 
@@ -753,8 +753,8 @@ mod tests {
         // Define with MixedCase, find with lowercase
         let (editor, outcome) = exec("hello\n", "1M 5J SD/MySpan/");
         assert_eq!(outcome, ExecOutcome::Success);
-        assert!(editor.frame_set.spans.get("myspan").is_some());
-        assert!(editor.frame_set.spans.get("MYSPAN").is_some());
+        assert!(editor.frame_set.get_span("myspan").is_some());
+        assert!(editor.frame_set.get_span("MYSPAN").is_some());
     }
 
     #[test]
@@ -762,14 +762,14 @@ mod tests {
         // SA/x/hello/ creates span "X" in HEAP with content "hello"
         let (editor, outcome) = exec("", "SA/x/hello/");
         assert_eq!(outcome, ExecOutcome::Success);
-        let span = editor.frame_set.spans.get("X").unwrap();
+        let span = editor.frame_set.get_span("X").unwrap();
         assert_eq!(span.frame_name, "HEAP");
         // Read span text from HEAP
         let heap = editor.frame_set.get_frame("HEAP").unwrap();
         let start = heap.get_mark(span.mark_start).unwrap();
         let end = heap.get_mark(span.mark_end).unwrap();
-        let start_idx = start.to_char_index(heap.rope());
-        let end_idx = end.to_char_index(heap.rope());
+        let start_idx = heap.to_char_index(&start);
+        let end_idx = heap.to_char_index(&end);
         let text: String = heap.rope().slice(start_idx..end_idx).to_string();
         assert_eq!(text, "hello");
     }
@@ -779,12 +779,12 @@ mod tests {
         // SA/x/hello/ then SA/x/bye/ — second replaces first
         let (editor, outcome) = exec("", "SA/x/hello/ SA/x/bye/");
         assert_eq!(outcome, ExecOutcome::Success);
-        let span = editor.frame_set.spans.get("X").unwrap();
+        let span = editor.frame_set.get_span("X").unwrap();
         let heap = editor.frame_set.get_frame("HEAP").unwrap();
         let start = heap.get_mark(span.mark_start).unwrap();
         let end = heap.get_mark(span.mark_end).unwrap();
-        let start_idx = start.to_char_index(heap.rope());
-        let end_idx = end.to_char_index(heap.rope());
+        let start_idx = heap.to_char_index(&start);
+        let end_idx = heap.to_char_index(&end);
         let text: String = heap.rope().slice(start_idx..end_idx).to_string();
         assert_eq!(text, "bye");
     }
@@ -840,7 +840,7 @@ mod tests {
         let (editor, outcome) = exec("line1\nline2\n", "SA/cmd/2A/ SR/cmd/");
         assert_eq!(outcome, ExecOutcome::Success);
         // span "CMD" should now have compiled code
-        let span = editor.frame_set.spans.get("CMD").unwrap();
+        let span = editor.frame_set.get_span("CMD").unwrap();
         assert!(span.code.is_some());
     }
 
@@ -849,12 +849,12 @@ mod tests {
         // SA/x/hello/ creates span x; SA$y$x$ sets y to the same content
         let (editor, outcome) = exec("", "SA/x/hello/ SA$y$x$");
         assert_eq!(outcome, ExecOutcome::Success);
-        let span_y = editor.frame_set.spans.get("Y").unwrap();
+        let span_y = editor.frame_set.get_span("Y").unwrap();
         let heap = editor.frame_set.get_frame("HEAP").unwrap();
         let start = heap.get_mark(span_y.mark_start).unwrap();
         let end = heap.get_mark(span_y.mark_end).unwrap();
-        let start_idx = start.to_char_index(heap.rope());
-        let end_idx = end.to_char_index(heap.rope());
+        let start_idx = heap.to_char_index(&start);
+        let end_idx = heap.to_char_index(&end);
         let text: String = heap.rope().slice(start_idx..end_idx).to_string();
         assert_eq!(text, "hello");
     }
@@ -867,7 +867,7 @@ mod tests {
         // insert point, so both shift right by 3.
         let (editor, outcome) = exec("hello\n", "1M 5J SD/s/ ,J I/abc/");
         assert_eq!(outcome, ExecOutcome::Success);
-        let span = editor.frame_set.spans.get("S").unwrap();
+        let span = editor.frame_set.get_span("S").unwrap();
         let frame = editor.frame_set.get_frame("LUDWIG").unwrap();
         let start = frame.get_mark(span.mark_start).unwrap();
         let end = frame.get_mark(span.mark_end).unwrap();

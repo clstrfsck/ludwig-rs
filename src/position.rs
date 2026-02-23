@@ -29,60 +29,27 @@ impl Position {
         Self { line: 0, column: 0 }
     }
 
-    /// Returns true if this position is in virtual space for the given rope.
-    pub fn is_virtual(&self, rope: &Rope) -> bool {
-        if self.line >= rope.len_lines() {
-            return true;
+    /// Calculate the position after inserting the given text at this position.
+    pub fn after_text(&self, text: &str) -> Position {
+        if text.is_empty() {
+            return *self;
         }
-        let line_len = line_length_excluding_newline(rope, self.line);
-        self.column > line_len
-    }
-
-    /// Convert this position to a char index in the rope.
-    ///
-    /// If the position is in virtual space, this returns the index at the
-    /// end of the line (or end of the document if beyond the last line).
-    pub fn to_char_index(&self, rope: &Rope) -> usize {
-        let total_lines = rope.len_lines();
-
-        // Clamp line to valid range
-        let line = self.line.min(total_lines.saturating_sub(1));
-        let line_start = rope.line_to_char(line);
-        let line_len = line_length_excluding_newline(rope, line);
-
-        // Clamp column to actual line length
-        let column = self.column.min(line_len);
-
-        line_start + column
-    }
-
-    /// Create a position from a char index in the rope.
-    pub fn from_char_index(rope: &Rope, char_idx: usize) -> Self {
-        let char_idx = char_idx.min(rope.len_chars());
-        let line = rope.char_to_line(char_idx);
-        let line_start = rope.line_to_char(line);
-        let column = char_idx - line_start;
-        Self { line, column }
-    }
-
-    /// Clamp this position to be within the actual text (no virtual space).
-    pub fn clamp_to_text(&self, rope: &Rope) -> Self {
-        let total_lines = rope.len_lines();
-
-        if total_lines == 0 {
-            return Self::zero();
+        let r = Rope::from_str(text);
+        let lines_added = r.len_lines() - 1;
+        let last_line_col = line_length_excluding_newline(&r, r.len_lines() - 1);
+        if lines_added == 0 {
+            Position::new(self.line, self.column + last_line_col)
+        } else {
+            Position::new(self.line + lines_added, last_line_col)
         }
-
-        let line = self.line.min(total_lines.saturating_sub(1));
-        let line_len = line_length_excluding_newline(rope, line);
-        let column = self.column.min(line_len);
-
-        Self { line, column }
     }
 }
 
 /// Get the length of a line excluding any trailing newline character.
-pub fn line_length_excluding_newline(rope: &Rope, line: usize) -> usize {
+/// FIXME: This is one of a handful of fns that take a Rope.
+/// There should be some other abstraction that encapsulates Rope and provides
+/// these utilities.
+fn line_length_excluding_newline(rope: &Rope, line: usize) -> usize {
     if line >= rope.len_lines() {
         return 0;
     }
@@ -108,60 +75,29 @@ pub fn line_length_excluding_newline(rope: &Rope, line: usize) -> usize {
     len
 }
 
+/// Calculate the effect of inserting text: (lines_added, end_column)
+///
+/// Uses Rope to handle multi-line text correctly.
+pub(crate) fn calculate_insert_effect(text: &str) -> (usize, usize) {
+    if text.is_empty() {
+        return (0, 0);
+    }
+    let r = Rope::from_str(text);
+    let lines = r.len_lines();
+    (lines - 1, line_length_excluding_newline(&r, lines - 1))
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_position_virtual_space() {
-        let rope = Rope::from_str("hello\nworld\n");
-
-        // Position within text
-        let pos = Position::new(0, 3);
-        assert!(!pos.is_virtual(&rope));
-
-        // Position at end of line
-        let pos = Position::new(0, 5);
-        assert!(!pos.is_virtual(&rope));
-
-        // Position beyond end of line (virtual)
-        let pos = Position::new(0, 10);
-        assert!(pos.is_virtual(&rope));
-
-        // Position on non-existent line (virtual)
-        let pos = Position::new(100, 0);
-        assert!(pos.is_virtual(&rope));
-    }
-
-    #[test]
-    fn test_position_to_char_index() {
-        let rope = Rope::from_str("hello\nworld\n");
-
-        // Normal positions
-        assert_eq!(Position::new(0, 0).to_char_index(&rope), 0);
-        assert_eq!(Position::new(0, 3).to_char_index(&rope), 3);
-        assert_eq!(Position::new(1, 0).to_char_index(&rope), 6);
-        assert_eq!(Position::new(1, 3).to_char_index(&rope), 9);
-
-        // Virtual space clamps to end of line
-        assert_eq!(Position::new(0, 100).to_char_index(&rope), 5);
-    }
-
-    #[test]
-    fn test_position_clamp_to_text() {
-        let rope = Rope::from_str("hello\nworld\n");
-
-        // Clamp virtual column to line length
-        assert_eq!(
-            Position::new(0, 100).clamp_to_text(&rope),
-            Position::new(0, 5)
-        );
-
-        // Clamp virtual line to last line
-        assert_eq!(
-            Position::new(10, 2).clamp_to_text(&rope),
-            Position::new(2, 0)
-        );
+    fn test_calculate_insert_effect() {
+        assert_eq!(calculate_insert_effect(""), (0, 0));
+        assert_eq!(calculate_insert_effect("hello"), (0, 5));
+        assert_eq!(calculate_insert_effect("hello\nworld"), (1, 5));
+        assert_eq!(calculate_insert_effect("line1\nline2\n"), (2, 0));
     }
 
     #[test]

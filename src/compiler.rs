@@ -45,7 +45,7 @@ impl Compiler<'_> {
                 }
             }
         }
-        Ok(CompiledCode { instructions })
+        Ok(CompiledCode::new(instructions))
     }
 
     /// Parse one command: leading param, then `(` for compound or command name for simple.
@@ -137,7 +137,7 @@ impl Compiler<'_> {
         let mut tpars = Vec::new();
         if cmd.tpar_count > 0 {
             let first = self.parse_trailing_param()?;
-            let delim = first.dlm;
+            let delim = first.delim;
             tpars.push(first);
             for _ in 1..cmd.tpar_count {
                 tpars.push(self.parse_trailing_param_with_delim(delim)?);
@@ -164,7 +164,7 @@ impl Compiler<'_> {
 
         let on_success = {
             let code = self.compile_sequence()?;
-            if code.instructions.is_empty() {
+            if code.instructions().is_empty() {
                 None
             } else {
                 Some(code)
@@ -176,7 +176,7 @@ impl Compiler<'_> {
             Some(&':') => {
                 self.chars.next(); // consume ':'
                 let code = self.compile_sequence()?;
-                if code.instructions.is_empty() {
+                if code.instructions().is_empty() {
                     None
                 } else {
                     Some(code)
@@ -642,7 +642,7 @@ mod tests {
 
     // Helper to compile and return the instructions vec
     fn compile_ok(input: &str) -> Vec<Instruction> {
-        compile(input).unwrap().instructions
+        compile(input).unwrap().instructions().to_vec()
     }
 
     fn compile_err(input: &str) -> String {
@@ -722,8 +722,8 @@ mod tests {
             Instruction::SimpleCmd { op, tpars, .. } => {
                 assert_eq!(*op, CmdOp::InsertText);
                 assert_eq!(tpars.len(), 1);
-                assert_eq!(tpars[0].dlm, '/');
-                assert_eq!(tpars[0].str, "hello");
+                assert_eq!(tpars[0].delim, '/');
+                assert_eq!(tpars[0].content, "hello");
             }
             _ => panic!("expected SimpleCmd"),
         }
@@ -738,7 +738,7 @@ mod tests {
             } => {
                 assert_eq!(*op, CmdOp::InsertText);
                 assert_eq!(*lead, LeadParam::Pint(3));
-                assert_eq!(tpars[0].str, "world");
+                assert_eq!(tpars[0].content, "world");
             }
             _ => panic!("expected SimpleCmd"),
         }
@@ -797,7 +797,7 @@ mod tests {
                 exit_handler,
             } => {
                 assert_eq!(*repeat, RepeatCount::Once);
-                assert_eq!(body.instructions.len(), 1);
+                assert_eq!(body.instructions().len(), 1);
                 assert!(exit_handler.is_none());
             }
             _ => panic!("expected CompoundCmd"),
@@ -810,7 +810,7 @@ mod tests {
         match &instrs[0] {
             Instruction::CompoundCmd { repeat, body, .. } => {
                 assert_eq!(*repeat, RepeatCount::Times(3));
-                assert_eq!(body.instructions.len(), 2);
+                assert_eq!(body.instructions().len(), 2);
             }
             _ => panic!("expected CompoundCmd"),
         }
@@ -822,7 +822,7 @@ mod tests {
         match &instrs[0] {
             Instruction::CompoundCmd { repeat, body, .. } => {
                 assert_eq!(*repeat, RepeatCount::Indefinite);
-                assert_eq!(body.instructions.len(), 2);
+                assert_eq!(body.instructions().len(), 2);
             }
             _ => panic!("expected CompoundCmd"),
         }
@@ -853,22 +853,22 @@ mod tests {
         match &instrs[0] {
             Instruction::CompoundCmd { body, .. } => {
                 // Body has A and (J[:D])
-                assert_eq!(body.instructions.len(), 2);
-                match &body.instructions[0] {
+                assert_eq!(body.instructions().len(), 2);
+                match &body.instructions()[0] {
                     Instruction::SimpleCmd { op, .. } => {
                         assert_eq!(*op, CmdOp::Advance);
                     }
                     _ => panic!("expected SimpleCmd"),
                 }
-                match &body.instructions[1] {
+                match &body.instructions()[1] {
                     Instruction::CompoundCmd {
                         body: inner_body,
                         exit_handler,
                         ..
                     } => {
-                        assert_eq!(inner_body.instructions.len(), 1);
+                        assert_eq!(inner_body.instructions().len(), 1);
                         assert!(exit_handler.is_none());
-                        match &inner_body.instructions[0] {
+                        match &inner_body.instructions()[0] {
                             Instruction::SimpleCmd {
                                 op, exit_handler, ..
                             } => {

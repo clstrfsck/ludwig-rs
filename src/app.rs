@@ -134,16 +134,14 @@ impl App {
 
     /// Execute compiled code, intercepting window commands.
     fn execute_code(&mut self, code: &CompiledCode, terminal: &mut dyn Terminal) {
-        for instr in &code.instructions {
+        for instr in code.instructions() {
             if let Instruction::SimpleCmd { op, lead, .. } = instr
                 && self.try_handle_window_cmd(*op, *lead, terminal)
             {
                 continue;
             }
             // Not a window command — pass single instruction to interpreter
-            let single = CompiledCode {
-                instructions: vec![instr.clone()],
-            };
+            let single = CompiledCode::new(vec![instr.clone()]);
             let outcome = self.editor.execute(&single);
             if !outcome.is_success() {
                 terminal.beep();

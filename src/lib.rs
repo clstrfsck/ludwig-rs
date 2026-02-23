@@ -30,7 +30,7 @@ pub mod code;
 pub mod compiler;
 pub mod edit_mode;
 mod editor;
-pub mod exec_context;
+mod exec_context;
 mod frame;
 pub mod frame_set;
 mod interpreter;
@@ -53,5 +53,5 @@ pub use frame::{
 };
 pub use lead_param::LeadParam;
 pub use marks::{MarkId, MarkSet};
-pub use position::{Position, line_length_excluding_newline};
+pub use position::Position;
 pub use trail_param::TrailParam;

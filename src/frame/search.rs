@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use crate::cmd_result::{CmdFailure, CmdResult};
 use crate::lead_param::LeadParam;
 use crate::marks::MarkId;
-use crate::position::{Position, line_length_excluding_newline};
+use crate::position::Position;
 use crate::trail_param::TrailParam;
 
 use super::Frame;
@@ -69,12 +69,12 @@ impl SearchCommands for Frame {
             _ => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
 
-        if search.str.is_empty() {
+        if search.content.is_empty() {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
 
         // Case sensitivity: / = insensitive, " = exact, others = insensitive
-        let case_sensitive = search.dlm == '"';
+        let case_sensitive = search.delim == '"';
 
         let original_dot = self.dot();
         let mut replacements = 0usize;
@@ -83,13 +83,13 @@ impl SearchCommands for Frame {
             // Replace all occurrences
             loop {
                 let found = if count > 0 {
-                    self.find_literal_forward(&search.str, case_sensitive)
+                    self.find_literal_forward(&search.content, case_sensitive)
                 } else {
-                    self.find_literal_backward(&search.str, case_sensitive)
+                    self.find_literal_backward(&search.content, case_sensitive)
                 };
                 match found {
                     Some((start, end)) => {
-                        self.do_replace(start, end, &replace.str);
+                        self.do_replace(start, end, &replace.content);
                         replacements += 1;
                     }
                     None => break,
@@ -100,13 +100,13 @@ impl SearchCommands for Frame {
             let abs_count = count.unsigned_abs();
             for _ in 0..abs_count {
                 let found = if count > 0 {
-                    self.find_literal_forward(&search.str, case_sensitive)
+                    self.find_literal_forward(&search.content, case_sensitive)
                 } else {
-                    self.find_literal_backward(&search.str, case_sensitive)
+                    self.find_literal_backward(&search.content, case_sensitive)
                 };
                 match found {
                     Some((start, end)) => {
-                        self.do_replace(start, end, &replace.str);
+                        self.do_replace(start, end, &replace.content);
                         replacements += 1;
                     }
                     None => {
@@ -137,17 +137,17 @@ impl SearchCommands for Frame {
             _ => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
 
-        if tpar.str.is_empty() {
+        if tpar.content.is_empty() {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
 
-        let case_sensitive = tpar.dlm == '"';
+        let case_sensitive = tpar.delim == '"';
 
         for _ in 0..count {
             let found = if forward {
-                self.find_literal_forward(&tpar.str, case_sensitive)
+                self.find_literal_forward(&tpar.content, case_sensitive)
             } else {
-                self.find_literal_backward(&tpar.str, case_sensitive)
+                self.find_literal_backward(&tpar.content, case_sensitive)
             };
             match found {
                 Some((new_equals, new_dot)) => {
@@ -169,14 +169,14 @@ impl SearchCommands for Frame {
 /// Supports single characters and `..` ranges: `'abc'`, `'a..z'`, `'0..9A..Z'`.
 fn parse_char_set(tpar: &TrailParam) -> HashSet<char> {
     let mut chars = HashSet::new();
-    let s: Vec<char> = tpar.str.chars().collect();
+    let s: Vec<char> = tpar.content.chars().collect();
     let len = s.len();
     let mut i = 0;
     while i < len {
         let ch1 = s[i];
         i += 1;
         // Check for range: ch1..ch2
-        if i + 2 <= len && s[i] == '.' && s[i + 1] == '.' {
+        if i + 2 < len && s[i] == '.' && s[i + 1] == '.' {
             let ch2 = s[i + 2];
             i += 3;
             // Insert all chars in the range (inclusive)
@@ -210,7 +210,7 @@ impl Frame {
 
         let chars = parse_char_set(tpar);
         let original_dot = self.dot();
-        let num_lines = self.lines();
+        let num_lines = self.line_count();
 
         if count > 0 {
             match self.nextbridge_forward(count as usize, &chars, bridge, num_lines) {
@@ -257,7 +257,7 @@ impl Frame {
             if line >= num_lines {
                 return None;
             }
-            let line_len = line_length_excluding_newline(&self.rope, line);
+            let line_len = self.line_length_excluding_newline(line);
             let line_start = self.rope.line_to_char(line);
 
             // Scan characters on this line starting from col
@@ -322,7 +322,7 @@ impl Frame {
             if line >= num_lines && line > 0 {
                 // dot was past last line; go to last real line
                 line = num_lines - 1;
-                let line_len = line_length_excluding_newline(&self.rope, line);
+                let line_len = self.line_length_excluding_newline(line);
                 col = line_len as isize; // virtual space at EOL
             }
 
@@ -342,12 +342,12 @@ impl Frame {
                     return None;
                 }
                 line -= 1;
-                let line_len = line_length_excluding_newline(&self.rope, line);
+                let line_len = self.line_length_excluding_newline(line);
                 // Check virtual space (space at EOL) first
                 col = line_len as isize;
             }
 
-            let line_len = line_length_excluding_newline(&self.rope, line);
+            let line_len = self.line_length_excluding_newline(line);
             let line_start = self.rope.line_to_char(line);
 
             // Check virtual space at EOL
@@ -385,7 +385,7 @@ impl Frame {
                 return None;
             }
             line -= 1;
-            let prev_line_len = line_length_excluding_newline(&self.rope, line);
+            let prev_line_len = self.line_length_excluding_newline(line);
             col = prev_line_len as isize - 1;
         }
     }
@@ -402,7 +402,7 @@ impl Frame {
         case_sensitive: bool,
     ) -> Option<(Position, Position)> {
         let dot = self.dot();
-        let num_lines = self.lines();
+        let num_lines = self.line_count();
         let pat_chars: Vec<char> = pattern.chars().collect();
         let pat_len = pat_chars.len();
 
@@ -414,7 +414,7 @@ impl Frame {
         let mut col = dot.column;
 
         while line < num_lines {
-            let line_len = line_length_excluding_newline(&self.rope, line);
+            let line_len = self.line_length_excluding_newline(line);
             let line_start = self.rope.line_to_char(line);
 
             while col + pat_len <= line_len {
@@ -445,13 +445,13 @@ impl Frame {
         }
 
         let mut line = dot.line;
-        let line_len = line_length_excluding_newline(&self.rope, line);
+        let line_len = self.line_length_excluding_newline(line);
         // Start searching from one position before dot (or end of line if dot is beyond)
         let effective_col = dot.column.min(line_len);
         let mut col = effective_col.saturating_sub(1) as isize;
 
         loop {
-            let line_len = line_length_excluding_newline(&self.rope, line);
+            let line_len = self.line_length_excluding_newline(line);
             let line_start = self.rope.line_to_char(line);
 
             while col >= 0 {
@@ -468,7 +468,7 @@ impl Frame {
                 return None;
             }
             line -= 1;
-            let prev_line_len = line_length_excluding_newline(&self.rope, line);
+            let prev_line_len = self.line_length_excluding_newline(line);
             col = prev_line_len.saturating_sub(1) as isize;
         }
     }
@@ -512,4 +512,35 @@ fn char_matches(ch: char, chars: &HashSet<char>, bridge: bool) -> bool {
 /// a single character lowercases to multiple code points.
 fn unicode_case_eq_char(a: char, b: char) -> bool {
     a.to_lowercase().eq(b.to_lowercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_char_set_tail_missing() {
+        let tp = TrailParam {
+            content: String::from("a.."),
+            delim: '\'',
+        };
+
+        let result = parse_char_set(&tp);
+        assert_eq!(result.len(), 2, "Expected 'a' and '.' in the set only");
+        assert!(result.contains(&'a'), "Expected 'a' in the set");
+        assert!(result.contains(&'.'), "Expected '.' in the set");
+    }
+
+    #[test]
+    fn test_parse_char_set_range() {
+        let tp = TrailParam {
+            content: String::from("a..j"),
+            delim: '\'',
+        };
+
+        let result = parse_char_set(&tp);
+        assert_eq!(result.len(), 10, "Expected 10 characters in the set");
+        assert!(result.contains(&'a'), "Expected 'a' in the set");
+        assert!(result.contains(&'j'), "Expected 'j' in the set");
+    }
 }

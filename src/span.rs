@@ -17,12 +17,12 @@ pub struct Span {
     pub mark_start: MarkId,
     /// Later boundary mark (`SpanBound` variant).
     pub mark_end: MarkId,
-    /// Cached compiled body, populated by SR and used by EX/EN (Phase 7).
+    /// Cached compiled body, populated by SR and used by EX/EN.
     pub code: Option<CompiledCode>,
 }
 
 /// Global registry of all spans, keyed by UPPERCASE name.
-pub struct SpanRegistry {
+pub(crate) struct SpanRegistry {
     spans: HashMap<String, Span>,
 }
 
@@ -39,39 +39,35 @@ impl SpanRegistry {
         }
     }
 
-    /// Insert or replace a span by name. Name is normalised to UPPERCASE.
-    pub fn insert(&mut self, name: &str, span: Span) {
-        self.spans.insert(normalise(name), span);
+    /// Insert or replace a span by name
+    pub fn insert(&mut self, name: String, span: Span) {
+        self.spans.insert(name, span);
     }
 
-    /// Look up a span by name (case-insensitive). O(1).
+    /// Look up a span by name
     pub fn get(&self, name: &str) -> Option<&Span> {
-        self.spans.get(&normalise(name))
+        self.spans.get(name)
     }
 
-    /// Mutable look-up by name (case-insensitive). O(1).
+    /// Mutable look-up by name
     pub fn get_mut(&mut self, name: &str) -> Option<&mut Span> {
-        self.spans.get_mut(&normalise(name))
+        self.spans.get_mut(name)
     }
 
-    /// Remove and return a span by name.
+    /// Remove and return a span by name
     pub fn remove(&mut self, name: &str) -> Option<Span> {
-        self.spans.remove(&normalise(name))
+        self.spans.remove(name)
     }
 
-    /// Test whether a span exists.
+    /// Test whether a span exists
     pub fn contains(&self, name: &str) -> bool {
-        self.spans.contains_key(&normalise(name))
+        self.spans.contains_key(name)
     }
 
-    /// Return all span names in alphabetical order (for SI display).
+    /// Return all span names in alphabetical order
     pub fn sorted_names(&self) -> Vec<&str> {
         let mut names: Vec<&str> = self.spans.keys().map(|s| s.as_str()).collect();
         names.sort();
         names
     }
-}
-
-fn normalise(s: &str) -> String {
-    s.to_uppercase()
 }

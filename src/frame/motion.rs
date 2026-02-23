@@ -3,7 +3,7 @@
 use crate::cmd_result::{CmdFailure, CmdResult};
 use crate::lead_param::LeadParam;
 use crate::marks::MarkId;
-use crate::position::{Position, line_length_excluding_newline};
+use crate::position::Position;
 
 use super::Frame;
 
@@ -40,7 +40,7 @@ impl MotionCommands for Frame {
             LeadParam::Minus => self.advance_back(1),
             LeadParam::Nint(n) => self.advance_back(n),
             LeadParam::Nindef => self.advance_begin(),
-            LeadParam::Marker(id) => self.advance_to(self.mark_position(id)),
+            LeadParam::Marker(id) => self.advance_to(self.get_mark(id)),
         }
     }
 
@@ -52,7 +52,7 @@ impl MotionCommands for Frame {
             LeadParam::Minus => self.jump_back(1),
             LeadParam::Nint(n) => self.jump_back(n),
             LeadParam::Nindef => self.jump_begin(),
-            LeadParam::Marker(id) => self.jump_to(self.mark_position(id)),
+            LeadParam::Marker(id) => self.jump_to(self.get_mark(id)),
         }
     }
 
@@ -100,7 +100,7 @@ impl MotionCommands for Frame {
             }
             LeadParam::Pindef => {
                 // Go to end of line (right margin)
-                let line_len = line_length_excluding_newline(&self.rope, dot.line);
+                let line_len = self.line_length_excluding_newline(dot.line);
                 self.set_mark_at(MarkId::Equals, dot);
                 self.set_dot(Position::new(dot.line, line_len));
                 CmdResult::Success
@@ -140,7 +140,7 @@ impl MotionCommands for Frame {
 
     fn cmd_down(&mut self, lead_param: LeadParam) -> CmdResult {
         let dot = self.dot();
-        let num_lines = self.lines();
+        let num_lines = self.line_count();
         match lead_param {
             LeadParam::None | LeadParam::Plus => {
                 if dot.line + 1 >= num_lines {
@@ -187,7 +187,7 @@ impl Frame {
         let new_line = old_pos.line + count;
         // Can't advance to last blank line if allow_last is false
         let last_line = if allow_last { new_line } else { new_line + 1 };
-        if last_line >= self.lines() && !allow_last {
+        if last_line >= self.line_count() && !allow_last {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
         self.set_mark_at(MarkId::Equals, old_pos);
@@ -198,13 +198,13 @@ impl Frame {
     fn return_fwd(&mut self, count: usize) -> CmdResult {
         let old_pos = self.dot();
         let new_line = old_pos.line + count;
-        let num_lines = self.lines();
+        let num_lines = self.line_count();
 
         // If target is beyond the buffer, insert newlines to extend it
         if new_line >= num_lines {
             let lines_to_add = new_line - num_lines + 1;
             let last_line = num_lines.saturating_sub(1);
-            let last_line_len = line_length_excluding_newline(&self.rope, last_line);
+            let last_line_len = self.line_length_excluding_newline(last_line);
             self.insert_at(
                 Position::new(last_line, last_line_len),
                 &"\n".repeat(lines_to_add),
@@ -234,7 +234,7 @@ impl Frame {
 
     fn advance_end(&mut self) -> CmdResult {
         self.set_mark_at(MarkId::Equals, self.dot());
-        self.set_dot(Position::new(self.lines(), 0));
+        self.set_dot(Position::new(self.line_count(), 0));
         CmdResult::Success
     }
 
@@ -280,7 +280,7 @@ impl Frame {
 
     fn jump_end(&mut self) -> CmdResult {
         let old_pos = self.dot();
-        let line_len = line_length_excluding_newline(&self.rope, old_pos.line);
+        let line_len = self.line_length_excluding_newline(old_pos.line);
         if line_len < old_pos.column {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }

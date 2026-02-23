@@ -179,13 +179,13 @@ impl Screen {
         if line < last_line {
             RelativeToEOF::Before
         } else if line == last_line {
-            if frame.line_len(last_line) == 0 {
+            if frame.line_length_excluding_newline(last_line) == 0 {
                 RelativeToEOF::At
             } else {
                 RelativeToEOF::Before
             }
         } else if line == line_count {
-            if frame.line_len(last_line) != 0 {
+            if frame.line_length_excluding_newline(last_line) != 0 {
                 RelativeToEOF::At
             } else {
                 RelativeToEOF::After
@@ -210,7 +210,7 @@ impl Screen {
         }
 
         // Get the line content
-        let line_len = frame.line_len(frame_line);
+        let line_len = frame.line_length_including_newline(frame_line);
         if offset >= line_len {
             return String::new(); // Entirely scrolled past
         }
