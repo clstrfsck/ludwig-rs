@@ -9,9 +9,7 @@ use crate::frame_set::FrameSet;
 use crate::marks::NUMBERED_MARK_RANGE;
 use crate::span::Span;
 
-use crate::{
-    CmdFailure, CmdResult, LeadParam, MarkId, Position, TrailParam, compile,
-};
+use crate::{CmdFailure, CmdResult, LeadParam, MarkId, Position, TrailParam, compile};
 
 /// The execution environment for the Ludwig interpreter.
 pub(crate) struct ExecutionContext<'a> {
@@ -99,32 +97,21 @@ impl<'a> ExecutionContext<'a> {
             .current_frame_mut()
             .set_mark_at(id_end, pos_end);
 
-        self.frame_set.insert_span(
-            &span_name,
-            Span {
-                frame_name: current_frame_name,
-                mark_start: id_start,
-                mark_end: id_end,
-                code: None,
-            },
-        );
+        self.frame_set
+            .insert_span(&span_name, Span::new(current_frame_name, id_start, id_end));
 
         CmdResult::Success
     }
 
     /// SC — Span Copy
     ///
-    /// `[N]SC/name/`
+    /// `nSC/name/`
     /// Copies the span's text into the current frame at dot, N times (default 1).
     pub(crate) fn cmd_span_copy(&mut self, lead: LeadParam, tpar: &TrailParam) -> CmdResult {
-        let span_name = match parse_span_name(tpar) {
+        let span_or_frame_name = match parse_span_name(tpar) {
             Some(n) => n,
             None => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
-        let is_frame = self.frame_set.contains_frame(&span_name);
-        if !is_frame && !self.frame_set.contains_span(&span_name) {
-            return CmdResult::Failure(CmdFailure::OutOfRange);
-        }
         let count = match lead {
             LeadParam::None | LeadParam::Plus => 1usize,
             LeadParam::Pint(n) => n,
@@ -132,23 +119,15 @@ impl<'a> ExecutionContext<'a> {
         };
 
         // Extract span text (ends the borrow on ctx.frame_set before the insert).
-        let text = {
-            let span = match self.frame_set.get_span(&span_name) {
-                Some(s) => s,
-                None => return CmdResult::Failure(CmdFailure::OutOfRange),
-            };
-            match self.read_span_text(span) {
-                Some(t) => t,
-                None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
+        if let Some(text) = self.read_span_or_frame_text(&span_or_frame_name) {
+            for _ in 0..count {
+                let dot = self.current_frame().dot();
+                self.current_frame_mut().insert_at(dot, &text);
             }
-        };
-
-        for _ in 0..count {
-            let dot = self.current_frame().dot();
-            self.current_frame_mut().insert_at(dot, &text);
+            CmdResult::Success
+        } else {
+            CmdResult::Failure(CmdFailure::SyntaxError)
         }
-
-        CmdResult::Success
     }
 
     /// ST — Span Transfer
@@ -191,7 +170,7 @@ impl<'a> ExecutionContext<'a> {
                 let start_idx = frame.to_char_index(&from);
                 let end_idx = frame.to_char_index(&to);
                 if start_idx < end_idx {
-                    frame.rope().slice(start_idx..end_idx).to_string()
+                    frame.slice(start_idx..end_idx)
                 } else {
                     String::new()
                 }
@@ -288,13 +267,9 @@ impl<'a> ExecutionContext<'a> {
         };
 
         // Resolve value: span dereference if delim == '$', otherwise literal.
-        let value: String = if tpars[1].delim == '$' {
+        let value = if tpars[1].delim == '$' {
             let ref_name = tpars[1].content.trim().to_uppercase();
-            let ref_span = match self.frame_set.get_span(&ref_name) {
-                Some(s) => s,
-                None => return CmdResult::Failure(CmdFailure::OutOfRange),
-            };
-            match self.read_span_text(ref_span) {
+            match self.read_span_or_frame_text(&ref_name) {
                 Some(t) => t,
                 None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
             }
@@ -358,15 +333,8 @@ impl<'a> ExecutionContext<'a> {
                 hf.set_mark_at(id_end, mark_end_pos);
             }
 
-            self.frame_set.insert_span(
-                &span_name,
-                Span {
-                    frame_name: heap_name,
-                    mark_start: id_start,
-                    mark_end: id_end,
-                    code: None,
-                },
-            );
+            self.frame_set
+                .insert_span(&span_name, Span::new(heap_name, id_start, id_end));
         }
 
         CmdResult::Success
@@ -379,20 +347,18 @@ impl<'a> ExecutionContext<'a> {
     pub(crate) fn cmd_span_index(&mut self) -> CmdResult {
         let names = self.frame_set.sorted_span_names();
         for name in names {
-            if let Some(span) = self.frame_set.get_span(name) {
-                let preview = match self.read_span_text(span) {
-                    Some(t) => {
-                        let first_line = t.lines().next().unwrap_or("").to_string();
-                        if first_line.len() > 31 || t.contains('\n') {
-                            format!("{}…", &first_line[..first_line.len().min(31)])
-                        } else {
-                            first_line
-                        }
+            let preview = match self.read_span_or_frame_text(name) {
+                Some(t) => {
+                    let first_line = t.lines().next().unwrap_or("").to_string();
+                    if first_line.len() > 31 || t.contains('\n') {
+                        format!("{}...", &first_line[..first_line.len().min(28)])
+                    } else {
+                        first_line
                     }
-                    None => String::from("<undefined>"),
-                };
-                println!("{:<32} {}", name, preview);
-            }
+                }
+                None => String::from("<undefined>"),
+            };
+            println!("{:<32} {}", name, preview);
         }
         CmdResult::Success
     }
@@ -412,15 +378,9 @@ impl<'a> ExecutionContext<'a> {
         };
 
         // Read the span's text.
-        let text = {
-            let span = match self.frame_set.get_span(&span_name) {
-                Some(s) => s,
-                None => return CmdResult::Failure(CmdFailure::OutOfRange),
-            };
-            match self.read_span_text(span) {
-                Some(t) => t,
-                None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
-            }
+        let text = match self.read_span_or_frame_text(&span_name) {
+            Some(t) => t,
+            None => return CmdResult::Failure(CmdFailure::OutOfRange),
         };
 
         // Compile it.
@@ -431,24 +391,34 @@ impl<'a> ExecutionContext<'a> {
 
         // Store the compiled code on the span.
         if let Some(span) = self.frame_set.get_span_mut(&span_name) {
-            span.code = Some(compiled);
+            span.set_code(compiled);
+            CmdResult::Success
+        } else if let Some(frame) = self.frame_set.get_frame_mut(&span_name) {
+            frame.set_code(compiled);
+            CmdResult::Success
+        } else {
+            CmdResult::Failure(CmdFailure::OutOfRange)
         }
-
-        CmdResult::Success
     }
 
-    /// Extract the text of a span from its owning frame.
-    /// Returns `None` if the span's marks are not set in its frame.
-    fn read_span_text(&self, span: &Span) -> Option<String> {
-        let frame = self.frame_set.get_frame(&span.frame_name)?;
-        let start = frame.get_mark(span.mark_start)?;
-        let end = frame.get_mark(span.mark_end)?;
-        let start_idx = frame.to_char_index(&start);
-        let end_idx = frame.to_char_index(&end);
-        if start_idx >= end_idx {
-            Some(String::new())
+    // Extracts the text of a span or frame.
+    // Returns 'None' if the span's marks are not set in its frame
+    fn read_span_or_frame_text(&self, name: &str) -> Option<String> {
+        if let Some(frame) = self.frame_set.get_frame(name) {
+            Some(frame.text())
+        } else if let Some(span) = self.frame_set.get_span(name) {
+            let frame = self.frame_set.get_frame(&span.frame_name)?;
+            let start = frame.get_mark(span.mark_start)?;
+            let end = frame.get_mark(span.mark_end)?;
+            let start_idx = frame.to_char_index(&start);
+            let end_idx = frame.to_char_index(&end);
+            if start_idx >= end_idx {
+                Some(String::new())
+            } else {
+                Some(frame.slice(start_idx..end_idx))
+            }
         } else {
-            Some(frame.rope().slice(start_idx..end_idx).to_string())
+            None
         }
     }
 }

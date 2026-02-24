@@ -249,10 +249,6 @@ impl WordCommands for Frame {
     }
 }
 
-fn line_is_blank(rope: &ropey::Rope, line: usize) -> bool {
-    rope.line(line).chars().all(|ch| ch.is_whitespace())
-}
-
 // Private helpers for word commands
 impl Frame {
     /// Find the start of the word at (line, col).
@@ -335,7 +331,7 @@ impl Frame {
             LeadParam::Pindef => {
                 // Advance to start of next paragraph (same logic as word_advance_paragraph_forward).
                 let mut line = word_start.line;
-                while line < self.line_count() && !line_is_blank(&self.rope, line) {
+                while line < self.line_count() && !self.is_blank_line(line) {
                     line += 1;
                 }
                 self.find_next_word_start_from(Position::new(line, 0))
@@ -361,13 +357,13 @@ impl Frame {
             LeadParam::Nindef => {
                 // Advance to start of previous paragraph (same logic as word_advance_paragraph_backward).
                 let mut line = word_start.line;
-                while line > 0 && line_is_blank(&self.rope, line) {
+                while line > 0 && self.is_blank_line(line) {
                     line -= 1;
                 }
-                while line > 0 && !line_is_blank(&self.rope, line) {
+                while line > 0 && !self.is_blank_line(line) {
                     line -= 1;
                 }
-                while line_is_blank(&self.rope, line) {
+                while self.is_blank_line(line) {
                     if line + 1 >= self.line_count() {
                         return None;
                     }
@@ -391,7 +387,7 @@ impl Frame {
         // Get to blank line between paragraphs
         let dot = self.dot();
         let mut line = dot.line;
-        while line < self.line_count() && !line_is_blank(&self.rope, line) {
+        while line < self.line_count() && !self.is_blank_line(line) {
             line += 1;
         }
         let new_pos = match self.find_next_word_start_from(Position::new(line, 0)) {
@@ -409,15 +405,15 @@ impl Frame {
         let mut line = dot.line;
 
         // Find non-blank line in paragraph
-        while line > 0 && line_is_blank(&self.rope, line) {
+        while line > 0 && self.is_blank_line(line) {
             line -= 1;
         }
         // Find blank line separating this para from previous
-        while line > 0 && !line_is_blank(&self.rope, line) {
+        while line > 0 && !self.is_blank_line(line) {
             line -= 1;
         }
         // Find first non-blank
-        while line_is_blank(&self.rope, line) {
+        while self.is_blank_line(line) {
             if line + 1 >= self.line_count() {
                 return CmdResult::Failure(CmdFailure::OutOfRange);
             }

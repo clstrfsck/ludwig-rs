@@ -18,7 +18,34 @@ pub struct Span {
     /// Later boundary mark (`SpanBound` variant).
     pub mark_end: MarkId,
     /// Cached compiled body, populated by SR and used by EX/EN.
-    pub code: Option<CompiledCode>,
+    code: Option<CompiledCode>,
+}
+
+impl Span {
+    /// New span with no code.
+    pub fn new(frame_name: String, mark_start: MarkId, mark_end: MarkId) -> Span {
+        Self {
+            frame_name,
+            mark_start,
+            mark_end,
+            code: None,
+        }
+    }
+
+    /// Get the compiled code for the span
+    pub fn get_code(&self) -> Option<&CompiledCode> {
+        self.code.as_ref()
+    }
+
+    /// Set the compiled code for the span
+    pub fn set_code(&mut self, code: CompiledCode) {
+        self.code = Some(code)
+    }
+
+    /// Unset the compiled code for the span
+    pub fn clear_code(&mut self) {
+        self.code = None
+    }
 }
 
 /// Global registry of all spans, keyed by UPPERCASE name.

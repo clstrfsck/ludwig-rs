@@ -14,9 +14,11 @@ pub use word::WordCommands;
 
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::RangeBounds;
 
 use ropey::Rope;
 
+use crate::CompiledCode;
 use crate::marks::{MarkId, MarkSet};
 use crate::position::Position;
 
@@ -27,6 +29,8 @@ pub struct Frame {
     rope: Rope,
     /// All marks (including dot) in this frame.
     marks: MarkSet,
+    /// Compiled code for the frame
+    code: Option<CompiledCode>,
 }
 
 impl fmt::Display for Frame {
@@ -42,6 +46,7 @@ impl Frame {
         Self {
             rope: Rope::new(),
             marks: MarkSet::new(),
+            code: None,
         }
     }
 
@@ -54,6 +59,7 @@ impl Frame {
         Self {
             rope: r,
             marks: MarkSet::new(),
+            code: None,
         }
     }
 }
@@ -88,6 +94,21 @@ impl Frame {
         self.marks.unset(id);
     }
 
+    /// Get the compiled code for the frame
+    pub fn get_code(&self) -> Option<&CompiledCode> {
+        self.code.as_ref()
+    }
+
+    /// Set the compiled code for the frame
+    pub fn set_code(&mut self, code: CompiledCode) {
+        self.code = Some(code)
+    }
+
+    /// Unset the compiled code for the frame
+    pub fn clear_code(&mut self) {
+        self.code = None
+    }
+
     /// Get the number of lines in the frame
     pub fn line_count(&self) -> usize {
         if self.rope.len_chars() == 0 {
@@ -120,9 +141,28 @@ impl Frame {
         self.rope.line(line).len_chars()
     }
 
-    /// Get a reference to the underlying rope (for advanced screen rendering).
-    pub fn rope(&self) -> &Rope {
-        &self.rope
+    /// Returns true if the specified line is empty or consists entirely of whitespace.
+    /// Returns true if the line index is out of range.
+    pub fn is_blank_line(&self, line: usize) -> bool {
+        if line >= self.line_count() {
+            return true;
+        }
+        self.rope.line(line).chars().all(|ch| ch.is_whitespace())
+    }
+
+    /// Get a slice of the underlying data.
+    /// FIXME: Come up with a better way of copying bits of rope around.
+    pub fn slice<R>(&self, char_range: R) -> String
+    where
+        R: RangeBounds<usize>,
+    {
+        self.rope.slice(char_range).to_string()
+    }
+
+    /// Get the full text of the frame.
+    /// FIXME: Come up with a better way of copying bits of rope around.
+    pub fn text(&self) -> String {
+        self.rope.to_string()
     }
 
     /// Materialize virtual space at a position by padding with spaces.
@@ -325,22 +365,12 @@ pub(crate) fn line_length_excluding_newline(rope: &Rope, line: usize) -> usize {
     }
 
     let line_slice = rope.line(line);
-    let len = line_slice.len_chars();
-
-    // Check for line endings and exclude them
-    if len >= 1 {
-        let last = line_slice.char(len - 1);
-        if last == '\n' {
-            if len >= 2 {
-                let second_last = line_slice.char(len - 2);
-                if second_last == '\r' {
-                    return len - 2;
-                }
-            }
-            return len - 1;
-        } else if last == '\r' {
-            return len - 1;
-        }
+    let mut len = line_slice.len_chars();
+    if len > 0 && line_slice.char(len - 1) == '\n' {
+        len -= 1;
+    }
+    if len > 0 && line_slice.char(len - 1) == '\r' {
+        len -= 1;
     }
     len
 }

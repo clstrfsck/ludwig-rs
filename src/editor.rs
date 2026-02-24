@@ -770,7 +770,7 @@ mod tests {
         let end = heap.get_mark(span.mark_end).unwrap();
         let start_idx = heap.to_char_index(&start);
         let end_idx = heap.to_char_index(&end);
-        let text: String = heap.rope().slice(start_idx..end_idx).to_string();
+        let text: String = heap.slice(start_idx..end_idx);
         assert_eq!(text, "hello");
     }
 
@@ -785,7 +785,7 @@ mod tests {
         let end = heap.get_mark(span.mark_end).unwrap();
         let start_idx = heap.to_char_index(&start);
         let end_idx = heap.to_char_index(&end);
-        let text: String = heap.rope().slice(start_idx..end_idx).to_string();
+        let text: String = heap.slice(start_idx..end_idx);
         assert_eq!(text, "bye");
     }
 
@@ -841,7 +841,7 @@ mod tests {
         assert_eq!(outcome, ExecOutcome::Success);
         // span "CMD" should now have compiled code
         let span = editor.frame_set.get_span("CMD").unwrap();
-        assert!(span.code.is_some());
+        assert!(span.get_code().is_some());
     }
 
     #[test]
@@ -855,7 +855,7 @@ mod tests {
         let end = heap.get_mark(span_y.mark_end).unwrap();
         let start_idx = heap.to_char_index(&start);
         let end_idx = heap.to_char_index(&end);
-        let text: String = heap.rope().slice(start_idx..end_idx).to_string();
+        let text: String = heap.slice(start_idx..end_idx);
         assert_eq!(text, "hello");
     }
 
