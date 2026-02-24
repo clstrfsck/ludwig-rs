@@ -15,15 +15,18 @@ use crate::{CmdFailure, CmdResult, LeadParam, MarkId, Position, TrailParam, comp
 pub(crate) struct ExecutionContext<'a> {
     /// The set of all frames and the global span registry.
     pub(crate) frame_set: &'a mut FrameSet,
-    // Recursion depth counter (used in Phase 7 for EX/EN limit of 100).
-    // pub(crate) recursion_depth: u32,
+    /// Current EX/EN nesting depth; capped at [`MAX_RECURSION_DEPTH`].
+    pub(crate) recursion_depth: u32,
 }
+
+/// Maximum allowed EX/EN recursion depth (spec section 9.8).
+pub(crate) const MAX_RECURSION_DEPTH: u32 = 100;
 
 impl<'a> ExecutionContext<'a> {
     pub(crate) fn new(frame_set: &'a mut FrameSet) -> Self {
         Self {
             frame_set,
-            // recursion_depth: 0,
+            recursion_depth: 0,
         }
     }
 
@@ -401,9 +404,11 @@ impl<'a> ExecutionContext<'a> {
         }
     }
 
-    // Extracts the text of a span or frame.
-    // Returns 'None' if the span's marks are not set in its frame
-    fn read_span_or_frame_text(&self, name: &str) -> Option<String> {
+    /// Extracts the text of a span or frame by name.
+    ///
+    /// Returns `None` if neither a frame nor a span with that name exists,
+    /// or if the span's boundary marks are not set in its frame.
+    pub(crate) fn read_span_or_frame_text(&self, name: &str) -> Option<String> {
         if let Some(frame) = self.frame_set.get_frame(name) {
             Some(frame.text())
         } else if let Some(span) = self.frame_set.get_span(name) {
@@ -423,10 +428,10 @@ impl<'a> ExecutionContext<'a> {
     }
 }
 
-const MAX_SPAN_NAME_LEN: usize = 31;
+pub(crate) const MAX_SPAN_NAME_LEN: usize = 31;
 
 /// Validate and normalise a span name from a trailing param.
-fn parse_span_name(tpar: &TrailParam) -> Option<String> {
+pub(crate) fn parse_span_name(tpar: &TrailParam) -> Option<String> {
     let name = tpar.content.trim();
     if name.is_empty() || name.len() > MAX_SPAN_NAME_LEN {
         return None;

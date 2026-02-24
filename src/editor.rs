@@ -874,4 +874,108 @@ mod tests {
         assert_eq!(start, Position::new(0, 3)); // was 0, shifted by 3
         assert_eq!(end, Position::new(0, 8)); // was 5, shifted by 3
     }
+
+    // --- EX / EN: span execution ---
+
+    #[test]
+    fn test_ex_executes_span_text() {
+        // SA creates a span holding "I/x/"; EX compiles and runs it.
+        // Use '|' as SA delimiter so '/' inside the span text is not ambiguous.
+        let (editor, outcome) = exec("", "SA|cmd|I/x/| EX/cmd/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "x");
+    }
+
+    #[test]
+    fn test_ex_with_count() {
+        // 3EX/cmd/ runs the span three times.
+        let (editor, outcome) = exec("", "SA|cmd|I/a/| 3EX/cmd/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "aaa");
+    }
+
+    #[test]
+    fn test_ex_always_recompiles() {
+        // After SA updates the span, EX should use the new text, not any old cache.
+        let (editor, outcome) = exec(
+            "",
+            "SA|cmd|I/old/| EX/cmd/ SA|cmd|I/new/| EX/cmd/",
+        );
+        assert_eq!(outcome, ExecOutcome::Success);
+        // First EX inserts "old"; second EX (with updated span) inserts "new"
+        // after "old", so the buffer becomes "oldnew".
+        assert_eq!(editor.to_string(), "oldnew");
+    }
+
+    #[test]
+    fn test_en_executes_and_caches() {
+        // EN compiles on first call and caches.
+        let (editor, outcome) = exec("", "SA|cmd|I/x/| EN/cmd/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "x");
+        // The span should now have cached compiled code.
+        let span = editor.frame_set.get_span("CMD").unwrap();
+        assert!(span.get_code().is_some());
+    }
+
+    #[test]
+    fn test_en_uses_cache_not_updated_text() {
+        // After EN caches "I/old/", updating the span text and calling EN again
+        // should still use the old compiled code (no recompile).
+        let (editor, outcome) = exec(
+            "",
+            "SA|cmd|I/old/| EN/cmd/ SA|cmd|I/new/| EN/cmd/",
+        );
+        assert_eq!(outcome, ExecOutcome::Success);
+        // First EN inserts "old"; second EN re-uses the cached "I/old/" code,
+        // inserting "old" again at the new dot position (after "old"),
+        // so result is "oldold".
+        assert_eq!(editor.to_string(), "oldold");
+    }
+
+    #[test]
+    fn test_ex_pindef_runs_until_failure() {
+        // >EX runs the span indefinitely; stops when the span exits with failure.
+        let (editor, outcome) = exec("ab\ncd\nef\ngh\nij\nkl\n", "SA|step|A| >EX/step/");
+        assert_eq!(outcome, ExecOutcome::Failure);
+        assert_eq!(editor.current_frame().dot(), Position::new(5, 0));
+    }
+
+    #[test]
+    fn test_ex_fails_on_missing_span() {
+        let (_, outcome) = exec("", "EX/nosuchspan/");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_ex_xs_exits_span() {
+        // XS inside EX exits the span (one compound boundary); execution
+        // continues after EX.
+        let (editor, outcome) = exec("", "SA|cmd|I/a/ XS I/b/| EX/cmd/ I/c/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // "a" inserted, then XS exits the span, then "c" inserted: "ac"
+        assert_eq!(editor.to_string(), "ac");
+    }
+
+    #[test]
+    fn test_ex_xf_propagates_failure() {
+        // XF inside EX exits the span as failure; without a handler the outer
+        // sequence stops.
+        let (editor, outcome) = exec("", "SA/cmd/XF/ EX/cmd/ I/unreachable/");
+        assert_eq!(outcome, ExecOutcome::Failure);
+        assert_eq!(editor.to_string(), "");
+    }
+
+    #[test]
+    fn test_ex_2xs_exits_two_levels() {
+        // 2XS inside EX exits through the span AND one more compound level.
+        let (editor, outcome) = exec(
+            "",
+            "SA/cmd/2XS/ (EX/cmd/ I/inner/) I/outer/",
+        );
+        assert_eq!(outcome, ExecOutcome::Success);
+        // 2XS: level 1 consumed by EX boundary → ExitSuccess{1}; level 2
+        // consumed by the outer compound → Success.  "outer" should execute.
+        assert_eq!(editor.to_string(), "outer");
+    }
 }

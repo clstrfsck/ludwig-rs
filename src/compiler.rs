@@ -397,10 +397,20 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus),
         tpar_count: 1
     },
+    "en" => CmdInfo {
+        op: CmdOp::SpanExecuteNoRecompile,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 1
+    },
     "eol" => CmdInfo {
         op: CmdOp::EqualEol,
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pindef, Nindef),
         tpar_count: 0
+    },
+    "ex" => CmdInfo {
+        op: CmdOp::SpanExecute,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 1
     },
     "eop" => CmdInfo {
         op: CmdOp::EqualEop,

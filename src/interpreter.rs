@@ -5,11 +5,11 @@
 //! with repetition, exit handlers, and exit level unwinding (XS/XF/XA).
 
 use crate::code::*;
-use crate::exec_context::ExecutionContext;
+use crate::exec_context::{ExecutionContext, MAX_RECURSION_DEPTH, parse_span_name};
 use crate::frame::{
     CaseMode, EditCommands, MotionCommands, PredicateCommands, SearchCommands, WordCommands,
 };
-use crate::{CmdFailure, CmdResult, LeadParam, TrailParam};
+use crate::{CmdFailure, CmdResult, LeadParam, TrailParam, compile};
 
 /// Execute compiled code against an execution context. Top-level entry point.
 ///
@@ -35,11 +35,17 @@ fn execute_instruction(ctx: &mut ExecutionContext, instr: &Instruction) -> ExecO
             tpars,
             exit_handler,
         } => {
-            let result = dispatch_cmd(ctx, *op, *lead, tpars);
-            let outcome = if result.is_success() {
-                ExecOutcome::Success
-            } else {
-                ExecOutcome::Failure
+            let outcome = match op {
+                CmdOp::SpanExecute => execute_span(ctx, *lead, tpars, true),
+                CmdOp::SpanExecuteNoRecompile => execute_span(ctx, *lead, tpars, false),
+                _ => {
+                    let result = dispatch_cmd(ctx, *op, *lead, tpars);
+                    if result.is_success() {
+                        ExecOutcome::Success
+                    } else {
+                        ExecOutcome::Failure
+                    }
+                }
             };
             apply_exit_handler(ctx, outcome, exit_handler.as_ref())
         }
@@ -150,6 +156,120 @@ fn apply_exit_handler(
         // XS/XF/XA/Abort propagate through handlers without triggering them
         _ => outcome,
     }
+}
+
+/// Execute a span procedure (EX / EN).
+///
+/// `recompile`:
+/// - `true`  (EX) — always read and compile the span text; cache the result.
+/// - `false` (EN) — use cached compiled code if present; compile and cache on
+///   first call.
+///
+/// The lead param may be `None`/`Plus` (run once) or `Pint(n)` (run n times).
+/// Returns `Failure` if the span name is invalid, the span does not exist, or
+/// the recursion depth limit is exceeded.
+fn execute_span(
+    ctx: &mut ExecutionContext,
+    lead: LeadParam,
+    tpars: &[TrailParam],
+    recompile: bool,
+) -> ExecOutcome {
+    // Validate lead and derive repeat count (None = indefinite).
+    let count: Option<usize> = match lead {
+        LeadParam::None | LeadParam::Plus => Some(1),
+        LeadParam::Pint(n) => Some(n),
+        LeadParam::Pindef => None,
+        _ => return ExecOutcome::Failure,
+    };
+
+    // Parse the span name.
+    let span_name = match parse_span_name(&tpars[0]) {
+        Some(n) => n,
+        None => return ExecOutcome::Failure,
+    };
+
+    // Recursion guard.
+    if ctx.recursion_depth >= MAX_RECURSION_DEPTH {
+        return ExecOutcome::Failure;
+    }
+
+    // Obtain compiled code.
+    // For EX: always read + compile + cache.
+    // For EN: use cache if present, else read + compile + cache.
+    let compiled = if recompile {
+        // Read and compile the span/frame text.
+        let text = match ctx.read_span_or_frame_text(&span_name) {
+            Some(t) => t,
+            None => return ExecOutcome::Failure,
+        };
+        let code = match compile(&text) {
+            Ok(c) => c,
+            Err(_) => return ExecOutcome::Failure,
+        };
+        // Cache it.
+        if let Some(span) = ctx.frame_set.get_span_mut(&span_name) {
+            span.set_code(code.clone());
+        } else if let Some(frame) = ctx.frame_set.get_frame_mut(&span_name) {
+            frame.set_code(code.clone());
+        }
+        code
+    } else {
+        // Try cache first.
+        let cached = if let Some(span) = ctx.frame_set.get_span(&span_name) {
+            span.get_code().cloned()
+        } else if let Some(frame) = ctx.frame_set.get_frame(&span_name) {
+            frame.get_code().cloned()
+        } else {
+            return ExecOutcome::Failure;
+        };
+
+        if let Some(code) = cached {
+            code
+        } else {
+            // No cache — compile and store.
+            let text = match ctx.read_span_or_frame_text(&span_name) {
+                Some(t) => t,
+                None => return ExecOutcome::Failure,
+            };
+            let code = match compile(&text) {
+                Ok(c) => c,
+                Err(_) => return ExecOutcome::Failure,
+            };
+            if let Some(span) = ctx.frame_set.get_span_mut(&span_name) {
+                span.set_code(code.clone());
+            } else if let Some(frame) = ctx.frame_set.get_frame_mut(&span_name) {
+                frame.set_code(code.clone());
+            }
+            code
+        }
+    };
+
+    // Execute the compiled code, respecting the repeat count.
+    ctx.recursion_depth += 1;
+    let outcome = match count {
+        Some(n) => {
+            let mut outcome = ExecOutcome::Success;
+            for _ in 0..n {
+                outcome = execute(ctx, &compiled);
+                outcome = unwrap_exit_level(outcome);
+                match outcome {
+                    ExecOutcome::Success => continue,
+                    _ => break,
+                }
+            }
+            outcome
+        }
+        None => loop {
+            let outcome = execute(ctx, &compiled);
+            let outcome = unwrap_exit_level(outcome);
+            match outcome {
+                ExecOutcome::Success => continue,
+                other => break other,
+            }
+        },
+    };
+    ctx.recursion_depth -= 1;
+    outcome
 }
 
 /// Dispatch a CmdOp to the appropriate handler.
