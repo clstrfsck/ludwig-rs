@@ -18,7 +18,7 @@ pub enum MarkId {
 }
 
 /// Manages all marks in a frame.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MarkSet {
     marks: HashMap<MarkId, Position>,
 }

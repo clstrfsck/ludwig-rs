@@ -25,6 +25,9 @@ fmt:
 fix-fmt:
     cargo fmt --all
 
+# Check
+check: build test clippy fmt
+
 # Generate HTML coverage using cargo-llvm-cov
 # rustup component add llvm-tools-preview
 # cargo install cargo-llvm-cov

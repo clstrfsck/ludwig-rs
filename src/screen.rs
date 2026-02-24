@@ -205,7 +205,7 @@ impl Screen {
     ) -> String {
         match self.at_or_past_last_line(frame, frame_line) {
             RelativeToEOF::Before => {}
-            RelativeToEOF::At => return EOF_MARKER.to_string(),
+            RelativeToEOF::At => return format!("{}   {}", EOF_MARKER, frame.name()),
             RelativeToEOF::After => return String::new(),
         }
 
@@ -342,7 +342,7 @@ mod tests {
             width: 80,
             height: 24,
         });
-        let frame = Frame::from_str("hello world");
+        let frame = Frame::from_str("LUDWIG", "hello world");
         let content = screen.build_line_content(&frame, 0, 0, 80);
         assert_eq!(content, "hello world");
     }
@@ -353,7 +353,7 @@ mod tests {
             width: 80,
             height: 24,
         });
-        let frame = Frame::from_str("hello world");
+        let frame = Frame::from_str("LUDWIG", "hello world");
         let content = screen.build_line_content(&frame, 0, 6, 80);
         assert_eq!(content, "world");
     }
@@ -364,11 +364,11 @@ mod tests {
             width: 80,
             height: 24,
         });
-        let frame = Frame::from_str("hello\n");
+        let frame = Frame::from_str("LUDWIG", "hello\n");
         let lc = frame.line_count();
         // EOF marker appears on the last line if it is blank
         let content = screen.build_line_content(&frame, lc - 1, 0, 80);
-        assert_eq!(content, "<End of File>");
+        assert_eq!(content, "<End of File>   LUDWIG");
     }
 
     #[test]
@@ -377,13 +377,13 @@ mod tests {
             width: 80,
             height: 24,
         });
-        let mut frame = Frame::from_str("hello\n");
+        let mut frame = Frame::from_str("LUDWIG", "hello\n");
         frame.set_dot(crate::Position::new(1, 0));
         frame.cmd_insert_text(LeadParam::None, &TrailParam::from_str("/world"));
         let lc = frame.line_count();
         // EOF marker appears on the first line past the end
         let content = screen.build_line_content(&frame, lc, 0, 80);
-        assert_eq!(content, "<End of File>");
+        assert_eq!(content, "<End of File>   LUDWIG");
     }
 
     #[test]
@@ -392,7 +392,7 @@ mod tests {
             width: 80,
             height: 24,
         });
-        let frame = Frame::from_str("hello");
+        let frame = Frame::from_str("LUDWIG", "hello");
         let content = screen.build_line_content(&frame, 5, 0, 80);
         assert_eq!(content, "");
     }
@@ -403,7 +403,7 @@ mod tests {
             width: 80,
             height: 5,
         });
-        let frame = Frame::from_str("line1\nline2\nline3");
+        let frame = Frame::from_str("LUDWIG", "line1\nline2\nline3");
         let mut term = MockTerminal::new(80, 5);
 
         // Invalidate so everything differs
@@ -433,7 +433,7 @@ mod tests {
         });
         // Create a frame with many lines
         let text: String = (0..100).map(|i| format!("line{}\n", i)).collect();
-        let mut frame = Frame::from_str(&text);
+        let mut frame = Frame::from_str("LUDWIG", &text);
         let mut term = MockTerminal::new(80, 10);
 
         // Move dot to line 50
@@ -470,7 +470,7 @@ mod tests {
             width: 80,
             height: 5,
         });
-        let frame = Frame::from_str("hello");
+        let frame = Frame::from_str("LUDWIG", "hello");
         let mut term = MockTerminal::new(80, 5);
 
         screen.msg_rows = 1;
@@ -484,7 +484,7 @@ mod tests {
             width: 80,
             height: 5,
         });
-        let frame = Frame::from_str("line1\nline2\nline3");
+        let frame = Frame::from_str("LUDWIG", "line1\nline2\nline3");
         let mut term = MockTerminal::new(80, 5);
 
         // First redraw after invalidate
@@ -515,7 +515,7 @@ mod tests {
         });
         // 10 lines so we can scroll
         let text: String = (0..10).map(|i| format!("line{}\n", i)).collect();
-        let mut frame = Frame::from_str(&text);
+        let mut frame = Frame::from_str("LUDWIG", &text);
         let mut term = MockTerminal::new(20, 5);
 
         // Initial render to populate current buffer
@@ -542,7 +542,7 @@ mod tests {
             height: 5,
         });
         let text: String = (0..10).map(|i| format!("line{}\n", i)).collect();
-        let mut frame = Frame::from_str(&text);
+        let mut frame = Frame::from_str("LUDWIG", &text);
         let mut term = MockTerminal::new(20, 5);
 
         // Position viewport in the middle
@@ -571,7 +571,7 @@ mod tests {
         });
         // Use distinct line content so we can identify what was written
         let text: String = (0..10).map(|i| format!("LINE-{:02}\n", i)).collect();
-        let mut frame = Frame::from_str(&text);
+        let mut frame = Frame::from_str("LUDWIG", &text);
         let mut term = MockTerminal::new(20, 5);
 
         // Initial render: shows lines 0-4

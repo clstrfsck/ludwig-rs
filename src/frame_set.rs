@@ -4,7 +4,6 @@ use crate::MarkId;
 use crate::frame::{Frame, FrameRegistry};
 use crate::span::{Span, SpanRegistry};
 
-const DEFAULT_FRAME_NAME: &str = "LUDWIG";
 const COMMAND_FRAME_NAME: &str = "COMMAND";
 const HEAP_FRAME_NAME: &str = "HEAP";
 const OOPS_FRAME_NAME: &str = "OOPS";
@@ -25,14 +24,15 @@ impl FrameSet {
     /// Fresh special frames are also created.
     pub fn new(main_frame: Frame) -> Self {
         let mut frames = FrameRegistry::new();
-        frames.insert(DEFAULT_FRAME_NAME.into(), main_frame);
+        let main_name = main_frame.name().to_string();
+        frames.insert(main_name.clone(), main_frame);
         for &name in SPECIAL_FRAME_NAMES {
-            frames.insert(name.into(), Frame::new());
+            frames.insert(name.into(), Frame::new(name));
         }
         Self {
             frames,
             spans: SpanRegistry::new(),
-            current_name: DEFAULT_FRAME_NAME.to_string(),
+            current_name: main_name,
             next_bound_id: 0,
         }
     }

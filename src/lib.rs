@@ -6,7 +6,7 @@
 //! use ludwig::{EditCommands, Frame, LeadParam, MotionCommands, Position, TrailParam};
 //!
 //! // Note that a final newline is automatically added if missing
-//! let mut frame: Frame = Frame::from_str("hello world");
+//! let mut frame: Frame = Frame::from_str("FRAME-NAME", "hello world");
 //!
 //! // Move cursor to virtual space (beyond line end)
 //! frame.set_dot(Position::new(0, 20));
@@ -37,6 +37,7 @@ mod interpreter;
 pub mod keybind;
 mod lead_param;
 mod marks;
+pub mod pattern;
 mod position;
 pub mod screen;
 mod span;

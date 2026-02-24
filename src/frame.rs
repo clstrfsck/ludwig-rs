@@ -25,6 +25,8 @@ use crate::position::Position;
 /// An editable text frame with support for virtual space and marks.
 #[derive(Debug, Default)]
 pub struct Frame {
+    /// The name of the frame.
+    name: String,
     /// The underlying rope data structure.
     rope: Rope,
     /// All marks (including dot) in this frame.
@@ -42,8 +44,9 @@ impl fmt::Display for Frame {
 // Constructors
 impl Frame {
     /// Create a new empty frame.
-    pub fn new() -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
+            name: name.into(),
             rope: Rope::new(),
             marks: MarkSet::new(),
             code: None,
@@ -51,12 +54,13 @@ impl Frame {
     }
 
     #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(name: &str, s: &str) -> Self {
         let mut r = Rope::from_str(s);
         if !s.is_empty() && !s.ends_with('\n') {
             r.insert_char(r.len_chars(), '\n');
         }
         Self {
+            name: name.into(),
             rope: r,
             marks: MarkSet::new(),
             code: None,
@@ -66,6 +70,10 @@ impl Frame {
 
 // Core Frame methods (used by command implementations)
 impl Frame {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn dot(&self) -> Position {
         self.marks.dot()
     }
@@ -328,6 +336,30 @@ impl Frame {
         let column = pos.column.min(line_len);
 
         line_start + column
+    }
+
+    /// Build a [`crate::pattern::MatchCtx`] for the given line.
+    ///
+    /// Returns `None` if `line_idx` is out of range.
+    pub fn make_match_ctx(&self, line_idx: usize) -> Option<crate::pattern::MatchCtx> {
+        if line_idx >= self.line_count() {
+            return None;
+        }
+        let line_chars: Vec<char> = self
+            .rope
+            .line(line_idx)
+            .chars()
+            .filter(|&c| c != '\n' && c != '\r')
+            .collect();
+        let len = line_chars.len();
+        Some(crate::pattern::MatchCtx {
+            line: line_chars,
+            dot_col: self.dot().column,
+            left_margin: 0,
+            right_margin: len,
+            line_idx,
+            marks: self.marks.clone(),
+        })
     }
 
     /// Clamp this position to be within the actual text (no virtual space).

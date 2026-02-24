@@ -58,6 +58,10 @@ impl SearchCommands for Frame {
         search: &TrailParam,
         replace: &TrailParam,
     ) -> CmdResult {
+        if search.delim == '`' {
+            return self.cmd_replace_pattern(lead_param, search, replace);
+        }
+
         // Determine count and direction
         let (count, replace_all) = match lead_param {
             LeadParam::None | LeadParam::Plus => (1isize, false),
@@ -129,6 +133,10 @@ impl SearchCommands for Frame {
     }
 
     fn cmd_get(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
+        if tpar.delim == '`' {
+            return self.cmd_get_pattern(lead_param, tpar);
+        }
+
         let (count, forward) = match lead_param {
             LeadParam::None | LeadParam::Plus => (1usize, true),
             LeadParam::Pint(n) => (n, true),
@@ -498,6 +506,173 @@ impl Frame {
     }
 }
 
+// ─── Pattern search helpers ───────────────────────────────────────────────────
+
+impl Frame {
+    /// G command via pattern (backtick delimiter).
+    fn cmd_get_pattern(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
+        let (count, forward) = match lead_param {
+            LeadParam::None | LeadParam::Plus => (1usize, true),
+            LeadParam::Pint(n) => (n, true),
+            LeadParam::Minus => (1, false),
+            LeadParam::Nint(n) => (n, false),
+            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        if tpar.content.is_empty() {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
+        }
+
+        let pattern = match crate::pattern::parse(&tpar.content) {
+            Ok(p) => p,
+            Err(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        for _ in 0..count {
+            let found = if forward {
+                self.find_pattern_forward(&pattern)
+            } else {
+                self.find_pattern_backward(&pattern)
+            };
+            match found {
+                Some((line, mid_start, mid_end)) => {
+                    self.set_mark_at(MarkId::Equals, Position::new(line, mid_start));
+                    self.set_dot(Position::new(line, mid_end));
+                }
+                None => return CmdResult::Failure(CmdFailure::OutOfRange),
+            }
+        }
+        CmdResult::Success
+    }
+
+    /// R command via pattern (backtick delimiter on search tpar).
+    fn cmd_replace_pattern(
+        &mut self,
+        lead_param: LeadParam,
+        search: &TrailParam,
+        replace: &TrailParam,
+    ) -> CmdResult {
+        let (count, replace_all) = match lead_param {
+            LeadParam::None | LeadParam::Plus => (1isize, false),
+            LeadParam::Pint(n) => (n as isize, false),
+            LeadParam::Minus => (-1, false),
+            LeadParam::Nint(n) => (-(n as isize), false),
+            LeadParam::Pindef => (1, true),
+            LeadParam::Nindef => (-1, true),
+            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        if search.content.is_empty() {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
+        }
+
+        let pattern = match crate::pattern::parse(&search.content) {
+            Ok(p) => p,
+            Err(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        let original_dot = self.dot();
+        let mut replacements = 0usize;
+
+        if replace_all {
+            loop {
+                let found = if count > 0 {
+                    self.find_pattern_forward(&pattern)
+                } else {
+                    self.find_pattern_backward(&pattern)
+                };
+                match found {
+                    Some((line, start_col, end_col)) => {
+                        let start = Position::new(line, start_col);
+                        let end = Position::new(line, end_col);
+                        self.do_replace(start, end, &replace.content);
+                        replacements += 1;
+                    }
+                    None => break,
+                }
+            }
+        } else {
+            let abs_count = count.unsigned_abs();
+            for _ in 0..abs_count {
+                let found = if count > 0 {
+                    self.find_pattern_forward(&pattern)
+                } else {
+                    self.find_pattern_backward(&pattern)
+                };
+                match found {
+                    Some((line, start_col, end_col)) => {
+                        let start = Position::new(line, start_col);
+                        let end = Position::new(line, end_col);
+                        self.do_replace(start, end, &replace.content);
+                        replacements += 1;
+                    }
+                    None => {
+                        if replacements == 0 {
+                            return CmdResult::Failure(CmdFailure::OutOfRange);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if replacements > 0 {
+            self.set_mark(MarkId::Modified);
+            self.set_mark_at(MarkId::Equals, original_dot);
+            CmdResult::Success
+        } else {
+            CmdResult::Failure(CmdFailure::OutOfRange)
+        }
+    }
+
+    /// Search forward from dot for a pattern, line by line.
+    /// Returns `(line_idx, middle_start, middle_end)`.
+    fn find_pattern_forward(
+        &self,
+        pattern: &crate::pattern::ast::PatternDef,
+    ) -> Option<(usize, usize, usize)> {
+        let dot = self.dot();
+        let num_lines = self.line_count();
+
+        for line_idx in dot.line..num_lines {
+            if let Some(ctx) = self.make_match_ctx(line_idx) {
+                let start_col = if line_idx == dot.line { dot.column } else { 0 };
+                if let Some(result) = crate::pattern::find_forward(pattern, &ctx, start_col) {
+                    return Some((line_idx, result.middle_start, result.middle_end));
+                }
+            }
+        }
+        None
+    }
+
+    /// Search backward from dot for a pattern, line by line.
+    /// Returns `(line_idx, middle_start, middle_end)`.
+    fn find_pattern_backward(
+        &self,
+        pattern: &crate::pattern::ast::PatternDef,
+    ) -> Option<(usize, usize, usize)> {
+        let dot = self.dot();
+
+        for line_idx in (0..=dot.line).rev() {
+            if let Some(ctx) = self.make_match_ctx(line_idx) {
+                let start_col = if line_idx == dot.line {
+                    // Only find matches that start before dot
+                    if dot.column == 0 {
+                        continue;
+                    }
+                    dot.column - 1
+                } else {
+                    ctx.line.len()
+                };
+                if let Some(result) = crate::pattern::find_backward(pattern, &ctx, start_col) {
+                    return Some((line_idx, result.middle_start, result.middle_end));
+                }
+            }
+        }
+        None
+    }
+}
+
 /// Check if a character matches the search criteria.
 ///
 /// For N (bridge=false): matches if char IS in the set.
@@ -539,7 +714,10 @@ mod tests {
         };
 
         let result = parse_char_set(&tp);
-        assert!(result.is_empty(), "Expected empty set for range in wrong order");
+        assert!(
+            result.is_empty(),
+            "Expected empty set for range in wrong order"
+        );
     }
 
     #[test]

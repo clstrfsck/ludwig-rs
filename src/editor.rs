@@ -9,6 +9,8 @@ use crate::frame_set::FrameSet;
 use crate::interpreter;
 use crate::{MarkId, code::*};
 
+const DEFAULT_FRAME_NAME: &str = "LUDWIG";
+
 /// An editor instance that wraps a FrameSet and provides command execution.
 pub struct Editor {
     frame_set: FrameSet,
@@ -24,7 +26,7 @@ impl Editor {
     /// Create a new empty editor.
     pub fn new() -> Self {
         Editor {
-            frame_set: FrameSet::new(Frame::new()),
+            frame_set: FrameSet::new(Frame::new(DEFAULT_FRAME_NAME)),
         }
     }
 
@@ -32,7 +34,7 @@ impl Editor {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         Editor {
-            frame_set: FrameSet::new(Frame::from_str(s)),
+            frame_set: FrameSet::new(Frame::from_str(DEFAULT_FRAME_NAME, s)),
         }
     }
 
@@ -897,10 +899,7 @@ mod tests {
     #[test]
     fn test_ex_always_recompiles() {
         // After SA updates the span, EX should use the new text, not any old cache.
-        let (editor, outcome) = exec(
-            "",
-            "SA|cmd|I/old/| EX/cmd/ SA|cmd|I/new/| EX/cmd/",
-        );
+        let (editor, outcome) = exec("", "SA|cmd|I/old/| EX/cmd/ SA|cmd|I/new/| EX/cmd/");
         assert_eq!(outcome, ExecOutcome::Success);
         // First EX inserts "old"; second EX (with updated span) inserts "new"
         // after "old", so the buffer becomes "oldnew".
@@ -922,10 +921,7 @@ mod tests {
     fn test_en_uses_cache_not_updated_text() {
         // After EN caches "I/old/", updating the span text and calling EN again
         // should still use the old compiled code (no recompile).
-        let (editor, outcome) = exec(
-            "",
-            "SA|cmd|I/old/| EN/cmd/ SA|cmd|I/new/| EN/cmd/",
-        );
+        let (editor, outcome) = exec("", "SA|cmd|I/old/| EN/cmd/ SA|cmd|I/new/| EN/cmd/");
         assert_eq!(outcome, ExecOutcome::Success);
         // First EN inserts "old"; second EN re-uses the cached "I/old/" code,
         // inserting "old" again at the new dot position (after "old"),
@@ -969,13 +965,151 @@ mod tests {
     #[test]
     fn test_ex_2xs_exits_two_levels() {
         // 2XS inside EX exits through the span AND one more compound level.
-        let (editor, outcome) = exec(
-            "",
-            "SA/cmd/2XS/ (EX/cmd/ I/inner/) I/outer/",
-        );
+        let (editor, outcome) = exec("", "SA/cmd/2XS/ (EX/cmd/ I/inner/) I/outer/");
         assert_eq!(outcome, ExecOutcome::Success);
         // 2XS: level 1 consumed by EX boundary → ExitSuccess{1}; level 2
         // consumed by the outer compound → Success.  "outer" should execute.
         assert_eq!(editor.to_string(), "outer");
+    }
+
+    // ─── Phase 6: Pattern matching (G, R, EQS with backtick delimiter) ─────────
+
+    #[test]
+    fn test_pattern_g_forward_charset() {
+        // G`N` — find first digit
+        let (editor, outcome) = exec("hello 42 world\n", "G`N`");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // dot lands after the digit '4', equals at '4'
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 7));
+        assert_eq!(
+            editor.current_frame().get_mark(MarkId::Equals).unwrap(),
+            Position::new(0, 6)
+        );
+    }
+
+    #[test]
+    fn test_pattern_g_forward_literal() {
+        // G`"world"` — find literal "world" via pattern
+        let (editor, outcome) = exec("hello world\n", "G`\"world\"`");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 11));
+        assert_eq!(
+            editor.current_frame().get_mark(MarkId::Equals).unwrap(),
+            Position::new(0, 6)
+        );
+    }
+
+    #[test]
+    fn test_pattern_g_forward_no_match() {
+        let (_, outcome) = exec("hello\n", "G`N`");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_pattern_g_multiline() {
+        // G`"cd"` — find "cd" on second line
+        let (editor, outcome) = exec("ab\ncd\n", "G`\"cd\"`");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(1, 2));
+        assert_eq!(
+            editor.current_frame().get_mark(MarkId::Equals).unwrap(),
+            Position::new(1, 0)
+        );
+    }
+
+    #[test]
+    fn test_pattern_g_backward() {
+        // Start at (0,0) in "ab\ncd\n", advance past line 0, then search
+        // backward for "ab" — should find it on line 0.
+        let (editor, outcome) = exec("ab\ncd\n", "A -G`\"ab\"`");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // "ab" found at line 0 cols 0..2; dot → (0,2), equals → (0,0)
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 2));
+        assert_eq!(
+            editor.current_frame().get_mark(MarkId::Equals).unwrap(),
+            Position::new(0, 0)
+        );
+    }
+
+    #[test]
+    fn test_pattern_g_count() {
+        // 3G`A` — advance through 3 alpha chars
+        let (editor, outcome) = exec("abcdef\n", "3G`A`");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Finds 'a' at 0..1, then from 1 'b' at 1..2, then from 2 'c' at 2..3
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 3));
+    }
+
+    #[test]
+    fn test_pattern_g_with_quantifier() {
+        // G`+N` — find one-or-more digits
+        let (editor, outcome) = exec("abc 123 def\n", "G`+N`");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Greedy: matches "123" at cols 4..7
+        assert_eq!(
+            editor.current_frame().get_mark(MarkId::Equals).unwrap(),
+            Position::new(0, 4)
+        );
+        assert_eq!(editor.current_frame().dot(), Position::new(0, 7));
+    }
+
+    #[test]
+    fn test_pattern_r_replaces_match() {
+        // R`+N`NUM` — replace the first run of digits with "NUM"
+        // Both tpars share the backtick delimiter: search="+N", replace="NUM"
+        let (editor, outcome) = exec("abc 123 def\n", "R`+N`NUM`");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "abc NUM def\n");
+    }
+
+    #[test]
+    fn test_pattern_r_no_match_fails() {
+        // R`N`X` — replace digit, fails on "hello" (no digits)
+        let (_, outcome) = exec("hello\n", "R`N`X`");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_pattern_r_replace_all() {
+        // >R`N`X` — replace every digit with "X"
+        let (editor, outcome) = exec("a1b2c3\n", ">R`N`X`");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "aXbXcX\n");
+    }
+
+    #[test]
+    fn test_pattern_eqs_matches() {
+        // EQS`A` — succeeds if dot is at an alpha char
+        let (_, outcome) = exec("hello\n", "EQS`A`");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_pattern_eqs_no_match() {
+        // EQS`N` — fails if dot is at an alpha char (not a digit)
+        let (_, outcome) = exec("hello\n", "EQS`N`");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_pattern_eqs_inverted() {
+        // -EQS`N` — succeeds because dot is NOT at a digit
+        let (_, outcome) = exec("hello\n", "-EQS`N`");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_pattern_eqs_with_context() {
+        // EQS`,A," "` — succeeds if dot is on an alpha immediately followed by space
+        // "hello world": dot at col 4 ('o'), next char is ' '
+        let (_, outcome) = exec("hello world\n", "4J EQS`,A,\" \"`");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_pattern_syntax_error() {
+        // G with an invalid pattern (unclosed group)
+        let (_, outcome) = exec("hello\n", "G`(A`");
+        assert_eq!(outcome, ExecOutcome::Failure);
     }
 }

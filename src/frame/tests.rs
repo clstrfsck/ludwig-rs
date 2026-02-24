@@ -5,6 +5,8 @@ use crate::trail_param::TrailParam;
 use edit::CaseMode;
 use search::SearchCommands;
 
+const TEST_FRAME_NAME: &str = "TEST";
+
 #[test]
 fn test_calculate_insert_effect() {
     assert_eq!(calculate_insert_effect(""), (0, 0));
@@ -56,14 +58,14 @@ fn test_unicode_newline_not_supported() {
 
 #[test]
 fn test_new_frame() {
-    let frame = Frame::new();
+    let frame = Frame::new(TEST_FRAME_NAME);
     assert_eq!(frame.to_string(), "");
     assert_eq!(frame.dot(), Position::zero());
 }
 
 #[test]
 fn test_insert_at_beginning() {
-    let mut frame = Frame::new();
+    let mut frame = Frame::new(TEST_FRAME_NAME);
     frame.insert("hello");
     assert_eq!(frame.to_string(), "hello");
     assert_eq!(frame.dot(), Position::new(0, 5));
@@ -71,7 +73,7 @@ fn test_insert_at_beginning() {
 
 #[test]
 fn test_insert_with_newlines() {
-    let mut frame = Frame::new();
+    let mut frame = Frame::new(TEST_FRAME_NAME);
     frame.insert("hello\nworld");
     assert_eq!(frame.to_string(), "hello\nworld");
     assert_eq!(frame.dot(), Position::new(1, 5));
@@ -79,7 +81,7 @@ fn test_insert_with_newlines() {
 
 #[test]
 fn test_insert_in_middle() {
-    let mut frame: Frame = Frame::from_str("helloworld\n");
+    let mut frame: Frame = Frame::from_str(TEST_FRAME_NAME, "helloworld\n");
     frame.set_dot(Position::new(0, 5));
     frame.insert(" ");
     assert_eq!(frame.to_string(), "hello world\n");
@@ -88,7 +90,7 @@ fn test_insert_in_middle() {
 
 #[test]
 fn test_virtual_space_insert() {
-    let mut frame: Frame = Frame::from_str("hello\n");
+    let mut frame: Frame = Frame::from_str(TEST_FRAME_NAME, "hello\n");
 
     // Move dot to virtual space (column 10 on a 5-char line)
     frame.set_dot(Position::new(0, 10));
@@ -105,7 +107,7 @@ fn test_virtual_space_insert() {
 
 #[test]
 fn test_dot_clamped_to_lines() {
-    let mut frame: Frame = Frame::from_str("hello\n");
+    let mut frame: Frame = Frame::from_str(TEST_FRAME_NAME, "hello\n");
 
     // (Try to) move to a line that doesn't exist yet
     frame.set_dot(Position::new(5, 3));
@@ -120,7 +122,7 @@ fn test_dot_clamped_to_lines() {
 
 #[test]
 fn test_advance_empty_buffer() {
-    let mut frame = Frame::from_str("");
+    let mut frame = Frame::from_str(TEST_FRAME_NAME, "");
     let result = frame.cmd_advance(LeadParam::None);
     assert!(!result.is_success());
     assert_eq!(frame.to_string(), "");
@@ -129,7 +131,7 @@ fn test_advance_empty_buffer() {
 
 #[test]
 fn test_advance_equals_mark() {
-    let mut frame = Frame::from_str("a\nb\nc\nd\ne\nf\n");
+    let mut frame = Frame::from_str(TEST_FRAME_NAME, "a\nb\nc\nd\ne\nf\n");
     let result = frame.cmd_advance(LeadParam::Pint(2));
     assert!(result.is_success());
     let result = frame.cmd_advance(LeadParam::Marker(MarkId::Equals));
@@ -141,21 +143,21 @@ fn test_advance_equals_mark() {
 
 #[test]
 fn test_delete() {
-    let mut frame: Frame = Frame::from_str("hello world\n");
+    let mut frame: Frame = Frame::from_str(TEST_FRAME_NAME, "hello world\n");
     frame.delete(Position::new(0, 5), Position::new(0, 11));
     assert_eq!(frame.to_string(), "hello\n");
 }
 
 #[test]
 fn test_delete_across_lines() {
-    let mut frame: Frame = Frame::from_str("hello\nworld\n");
+    let mut frame: Frame = Frame::from_str(TEST_FRAME_NAME, "hello\nworld\n");
     frame.delete(Position::new(0, 3), Position::new(1, 2));
     assert_eq!(frame.to_string(), "helrld\n");
 }
 
 #[test]
 fn test_overtype() {
-    let mut frame: Frame = Frame::from_str("hello world\n");
+    let mut frame: Frame = Frame::from_str(TEST_FRAME_NAME, "hello world\n");
     frame.set_dot(Position::new(0, 6));
     frame.overtype("there");
     assert_eq!(frame.to_string(), "hello there\n");
@@ -163,7 +165,7 @@ fn test_overtype() {
 
 #[test]
 fn test_overtype_extends_line() {
-    let mut frame: Frame = Frame::from_str("hello\n");
+    let mut frame: Frame = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     frame.set_dot(Position::new(0, 3));
     frame.overtype("ping world");
     assert_eq!(frame.to_string(), "helping world\n");
@@ -171,7 +173,7 @@ fn test_overtype_extends_line() {
 
 #[test]
 fn test_marks_update_on_insert() {
-    let mut frame: Frame = Frame::from_str("hello world\n");
+    let mut frame: Frame = Frame::from_str(TEST_FRAME_NAME, "hello world\n");
 
     // Create a mark after "hello"
     frame.set_dot(Position::new(0, 11)); // End of text
@@ -189,7 +191,7 @@ fn test_marks_update_on_insert() {
 
 #[test]
 fn test_marks_update_on_delete() {
-    let mut frame: Frame = Frame::from_str("hello beautiful world\n");
+    let mut frame: Frame = Frame::from_str(TEST_FRAME_NAME, "hello beautiful world\n");
 
     // Create a mark at the end
     let end_mark = MarkId::Numbered(1);
@@ -206,7 +208,7 @@ fn test_marks_update_on_delete() {
 
 #[test]
 fn test_position_to_char_index() {
-    let frame = Frame::from_str("hello\nworld\n");
+    let frame = Frame::from_str(TEST_FRAME_NAME, "hello\nworld\n");
 
     // Normal positions
     assert_eq!(frame.to_char_index(&Position::new(0, 0)), 0);
@@ -220,7 +222,7 @@ fn test_position_to_char_index() {
 
 #[test]
 fn test_position_clamp_to_text() {
-    let frame = Frame::from_str("hello\nworld\n");
+    let frame = Frame::from_str(TEST_FRAME_NAME, "hello\nworld\n");
 
     // Clamp virtual column to line length
     assert_eq!(
@@ -239,7 +241,7 @@ fn test_position_clamp_to_text() {
 
 #[test]
 fn insert_line_default_inserts_one_line() {
-    let mut f = Frame::from_str("hello\nworld\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\nworld\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_line(LeadParam::None);
     assert!(result.is_success());
@@ -250,7 +252,7 @@ fn insert_line_default_inserts_one_line() {
 
 #[test]
 fn insert_line_positive_n() {
-    let mut f = Frame::from_str("hello\nworld\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\nworld\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_line(LeadParam::Pint(3));
     assert!(result.is_success());
@@ -261,7 +263,7 @@ fn insert_line_positive_n() {
 
 #[test]
 fn insert_line_negative_inserts_one_line_dot_stays() {
-    let mut f = Frame::from_str("hello\nworld\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\nworld\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_line(LeadParam::Minus);
     assert!(result.is_success());
@@ -272,7 +274,7 @@ fn insert_line_negative_inserts_one_line_dot_stays() {
 
 #[test]
 fn insert_line_negative_n() {
-    let mut f = Frame::from_str("hello\nworld\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\nworld\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_line(LeadParam::Nint(3));
     assert!(result.is_success());
@@ -283,7 +285,7 @@ fn insert_line_negative_n() {
 
 #[test]
 fn insert_line_zero_is_noop() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_line(LeadParam::Pint(0));
     assert!(result.is_success());
@@ -293,7 +295,7 @@ fn insert_line_zero_is_noop() {
 
 #[test]
 fn insert_line_on_second_line() {
-    let mut f = Frame::from_str("hello\nworld\nfoo\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\nworld\nfoo\n");
     f.set_dot(Position::new(1, 2));
     let result = f.cmd_insert_line(LeadParam::Pint(2));
     assert!(result.is_success());
@@ -304,7 +306,7 @@ fn insert_line_on_second_line() {
 
 #[test]
 fn insert_line_sets_marks() {
-    let mut f = Frame::from_str("hello\nworld");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\nworld");
     f.set_dot(Position::new(1, 3));
     f.cmd_insert_line(LeadParam::Pint(2));
     // Last set to original dot position
@@ -315,7 +317,7 @@ fn insert_line_sets_marks() {
 
 #[test]
 fn insert_line_shifts_marks_below() {
-    let mut f = Frame::from_str("hello\nworld\nfoo");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\nworld\nfoo");
     f.set_dot(Position::new(1, 0));
     f.marks.set(MarkId::Numbered(1), Position::new(0, 3)); // above: unchanged
     f.marks.set(MarkId::Numbered(2), Position::new(1, 2)); // at insert line: shifts down
@@ -337,7 +339,7 @@ fn insert_line_shifts_marks_below() {
 
 #[test]
 fn insert_line_rejects_invalid_lead_param() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     let result = f.cmd_insert_line(LeadParam::Pindef);
     assert!(!result.is_success());
 }
@@ -346,7 +348,7 @@ fn insert_line_rejects_invalid_lead_param() {
 
 #[test]
 fn insert_char_default_inserts_one_space() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_char(LeadParam::None);
     assert!(result.is_success());
@@ -357,7 +359,7 @@ fn insert_char_default_inserts_one_space() {
 
 #[test]
 fn insert_char_positive_n_inserts_n_spaces() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_char(LeadParam::Pint(4));
     assert!(result.is_success());
@@ -367,7 +369,7 @@ fn insert_char_positive_n_inserts_n_spaces() {
 
 #[test]
 fn insert_char_negative_inserts_one_space_dot_follows() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_char(LeadParam::Minus);
     assert!(result.is_success());
@@ -378,7 +380,7 @@ fn insert_char_negative_inserts_one_space_dot_follows() {
 
 #[test]
 fn insert_char_negative_n_inserts_n_spaces_dot_follows() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_char(LeadParam::Nint(4));
     assert!(result.is_success());
@@ -389,7 +391,7 @@ fn insert_char_negative_n_inserts_n_spaces_dot_follows() {
 
 #[test]
 fn insert_char_zero_is_noop() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_insert_char(LeadParam::Pint(0));
     assert!(result.is_success());
@@ -399,7 +401,7 @@ fn insert_char_zero_is_noop() {
 
 #[test]
 fn insert_char_sets_marks() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 3));
     f.cmd_insert_char(LeadParam::Pint(2));
     // Modified mark set to dot after insert (col 5), then dot reset to 3
@@ -410,7 +412,7 @@ fn insert_char_sets_marks() {
 
 #[test]
 fn insert_char_updates_marks_after_insertion() {
-    let mut f = Frame::from_str("hello world\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world\n");
     f.set_dot(Position::new(0, 5));
     f.marks.set(MarkId::Numbered(1), Position::new(0, 3)); // before insert point
     f.marks.set(MarkId::Numbered(2), Position::new(0, 8)); // after insert point
@@ -430,7 +432,7 @@ fn insert_char_updates_marks_after_insertion() {
 
 #[test]
 fn insert_char_in_virtual_space() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 8));
     let result = f.cmd_insert_char(LeadParam::Pint(3));
     assert!(result.is_success());
@@ -441,7 +443,7 @@ fn insert_char_in_virtual_space() {
 
 #[test]
 fn insert_char_at_beginning_of_line() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_insert_char(LeadParam::Pint(2));
     assert!(result.is_success());
@@ -451,7 +453,7 @@ fn insert_char_at_beginning_of_line() {
 
 #[test]
 fn insert_char_rejects_invalid_lead_param() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     let result = f.cmd_insert_char(LeadParam::Pindef);
     assert!(!result.is_success());
 }
@@ -463,7 +465,7 @@ const M4: MarkId = MarkId::Numbered(4);
 
 #[test]
 fn delete_forward_updates_marks_and_text() {
-    let mut f = Frame::from_str("hello world!\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world!\n");
     f.marks.set(MarkId::Dot, Position::new(0, 5));
     f.marks.set(M1, Position::new(0, 3)); // Mark won't move
     f.marks.set(M2, Position::new(0, 5)); // Mark won't move (at dot)
@@ -482,7 +484,7 @@ fn delete_forward_updates_marks_and_text() {
 
 #[test]
 fn delete_backward_updates_marks_and_text() {
-    let mut f = Frame::from_str("hello world!\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world!\n");
     f.marks.set(MarkId::Dot, Position::new(0, 11));
     f.marks.set(M1, Position::new(0, 3)); // Mark won't move
     f.marks.set(M2, Position::new(0, 5)); // Mark won't move
@@ -501,7 +503,7 @@ fn delete_backward_updates_marks_and_text() {
 
 #[test]
 fn delete_forward_past_end_of_line_noop() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.marks.set(MarkId::Dot, Position::new(0, 5));
     let result = f.cmd_delete_char(LeadParam::Plus);
     assert!(result.is_success());
@@ -512,7 +514,7 @@ fn delete_forward_past_end_of_line_noop() {
 
 #[test]
 fn delete_backward_past_beginning_of_line_fails() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.marks.set(MarkId::Dot, Position::new(0, 0));
     let result = f.cmd_delete_char(LeadParam::Minus);
     assert!(!result.is_success());
@@ -523,7 +525,7 @@ fn delete_backward_past_beginning_of_line_fails() {
 
 #[test]
 fn delete_backward_in_virtual_space() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.marks.set(MarkId::Dot, Position::new(0, 8));
     let result = f.cmd_delete_char(LeadParam::Nint(2));
     assert!(result.is_success());
@@ -534,7 +536,7 @@ fn delete_backward_in_virtual_space() {
 
 #[test]
 fn delete_backward_in_virtual_space_plus_text() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.marks.set(MarkId::Dot, Position::new(0, 8));
     let result = f.cmd_delete_char(LeadParam::Nint(5));
     assert!(result.is_success());
@@ -545,7 +547,7 @@ fn delete_backward_in_virtual_space_plus_text() {
 
 #[test]
 fn delete_to_mark() {
-    let mut f = Frame::from_str("hello\n world!\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n world!\n");
     f.marks.set(MarkId::Dot, Position::new(0, 5));
     f.marks.set(MarkId::Numbered(1), Position::new(1, 0));
     let result = f.cmd_delete_char(LeadParam::Marker(MarkId::Numbered(1)));
@@ -557,7 +559,7 @@ fn delete_to_mark() {
 
 #[test]
 fn delete_to_mark_vspace() {
-    let mut f = Frame::from_str("hello\n world!\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n world!\n");
     f.marks.set(MarkId::Dot, Position::new(0, 8));
     f.marks.set(MarkId::Numbered(1), Position::new(1, 0));
     let result = f.cmd_delete_char(LeadParam::Marker(MarkId::Numbered(1)));
@@ -569,7 +571,7 @@ fn delete_to_mark_vspace() {
 
 #[test]
 fn insert_text_at_end_updates_marks_and_text() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.marks.set(MarkId::Dot, Position::new(0, 5));
     f.marks.set(MarkId::Numbered(1), Position::new(0, 5));
     f.marks.set(MarkId::Numbered(2), Position::new(0, 4));
@@ -590,7 +592,7 @@ fn insert_text_at_end_updates_marks_and_text() {
 
 #[test]
 fn insert_text_in_middle_updates_marks_and_text() {
-    let mut f = Frame::from_str("helloworld\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "helloworld\n");
     f.marks.set(MarkId::Dot, Position::new(0, 5));
     f.marks.set(MarkId::Numbered(1), Position::new(0, 5));
     f.marks.set(MarkId::Numbered(2), Position::new(0, 4));
@@ -611,7 +613,7 @@ fn insert_text_in_middle_updates_marks_and_text() {
 
 #[test]
 fn overwrite_text_updates_marks_and_text_when_inserting() {
-    let mut f = Frame::from_str("hello world\nline 2\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world\nline 2\n");
     f.marks.set(MarkId::Dot, Position::new(0, 6));
     f.marks.set(MarkId::Numbered(1), Position::new(0, 5));
     f.marks.set(MarkId::Numbered(2), Position::new(0, 6));
@@ -642,7 +644,7 @@ fn overwrite_text_updates_marks_and_text_when_inserting() {
 
 #[test]
 fn overwrite_text_updates_marks_and_text_when_overwriting() {
-    let mut f = Frame::from_str("hello universe\nline 2\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello universe\nline 2\n");
     f.marks.set(MarkId::Dot, Position::new(0, 6));
     f.marks.set(MarkId::Numbered(1), Position::new(0, 5));
     f.marks.set(MarkId::Numbered(2), Position::new(0, 6));
@@ -673,7 +675,7 @@ fn overwrite_text_updates_marks_and_text_when_overwriting() {
 
 #[test]
 fn overwrite_text_extends_line() {
-    let mut f = Frame::from_str("\nline 2\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "\nline 2\n");
     f.marks.set(MarkId::Dot, Position::new(0, 5));
     f.cmd_overtype_text(LeadParam::Pint(3), &TrailParam::from_str("0123456789"));
     assert_eq!(
@@ -687,7 +689,7 @@ fn overwrite_text_extends_line() {
 
 #[test]
 fn split_line_at_bol() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_split_line(LeadParam::None);
     assert!(result.is_success());
@@ -697,7 +699,7 @@ fn split_line_at_bol() {
 
 #[test]
 fn split_line_middle() {
-    let mut f = Frame::from_str("hello!\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello!\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_split_line(LeadParam::None);
     assert!(result.is_success());
@@ -707,7 +709,7 @@ fn split_line_middle() {
 
 #[test]
 fn split_line_eol() {
-    let mut f = Frame::from_str("hello!\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello!\n");
     f.set_dot(Position::new(0, 6));
     let result = f.cmd_split_line(LeadParam::None);
     assert!(result.is_success());
@@ -717,7 +719,7 @@ fn split_line_eol() {
 
 #[test]
 fn split_line_vspace() {
-    let mut f = Frame::from_str("hello!\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello!\n");
     f.set_dot(Position::new(0, 10));
     let result = f.cmd_split_line(LeadParam::None);
     assert!(result.is_success());
@@ -729,7 +731,7 @@ fn split_line_vspace() {
 
 #[test]
 fn case_up_single_char() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_case_change(LeadParam::None, CaseMode::Upper);
     assert!(result.is_success());
@@ -739,7 +741,7 @@ fn case_up_single_char() {
 
 #[test]
 fn case_up_multiple_chars() {
-    let mut f = Frame::from_str("hello world\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_case_change(LeadParam::Pint(5), CaseMode::Upper);
     assert!(result.is_success());
@@ -749,7 +751,7 @@ fn case_up_multiple_chars() {
 
 #[test]
 fn case_low_multiple_chars() {
-    let mut f = Frame::from_str("HELLO WORLD\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "HELLO WORLD\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_case_change(LeadParam::Pint(5), CaseMode::Lower);
     assert!(result.is_success());
@@ -759,7 +761,7 @@ fn case_low_multiple_chars() {
 
 #[test]
 fn case_edit_capitalizes_words() {
-    let mut f = Frame::from_str("hello world\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_case_change(LeadParam::Pint(11), CaseMode::Edit);
     assert!(result.is_success());
@@ -769,7 +771,7 @@ fn case_edit_capitalizes_words() {
 
 #[test]
 fn case_edit_from_mid_word() {
-    let mut f = Frame::from_str("hELLO\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hELLO\n");
     f.set_dot(Position::new(0, 1));
     let result = f.cmd_case_change(LeadParam::Pint(4), CaseMode::Edit);
     assert!(result.is_success());
@@ -779,7 +781,7 @@ fn case_edit_from_mid_word() {
 
 #[test]
 fn case_up_backward() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 5));
     let result = f.cmd_case_change(LeadParam::Nint(3), CaseMode::Upper);
     assert!(result.is_success());
@@ -789,7 +791,7 @@ fn case_up_backward() {
 
 #[test]
 fn case_up_backward_single() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_case_change(LeadParam::Minus, CaseMode::Upper);
     assert!(result.is_success());
@@ -799,7 +801,7 @@ fn case_up_backward_single() {
 
 #[test]
 fn case_up_pindef_to_eol() {
-    let mut f = Frame::from_str("hello world\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world\n");
     f.set_dot(Position::new(0, 6));
     let result = f.cmd_case_change(LeadParam::Pindef, CaseMode::Upper);
     assert!(result.is_success());
@@ -809,7 +811,7 @@ fn case_up_pindef_to_eol() {
 
 #[test]
 fn case_low_nindef_to_col0() {
-    let mut f = Frame::from_str("HELLO WORLD\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "HELLO WORLD\n");
     f.set_dot(Position::new(0, 5));
     let result = f.cmd_case_change(LeadParam::Nindef, CaseMode::Lower);
     assert!(result.is_success());
@@ -819,7 +821,7 @@ fn case_low_nindef_to_col0() {
 
 #[test]
 fn case_change_at_eol_is_noop() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 5));
     let result = f.cmd_case_change(LeadParam::None, CaseMode::Upper);
     assert!(result.is_success());
@@ -829,7 +831,7 @@ fn case_change_at_eol_is_noop() {
 
 #[test]
 fn case_change_in_virtual_space_is_noop() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 10));
     let result = f.cmd_case_change(LeadParam::Pint(3), CaseMode::Upper);
     assert!(result.is_success());
@@ -839,7 +841,7 @@ fn case_change_in_virtual_space_is_noop() {
 #[test]
 fn case_change_clamps_to_eol() {
     // Requesting more chars than available should change what's there
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_case_change(LeadParam::Pint(100), CaseMode::Upper);
     assert!(result.is_success());
@@ -849,7 +851,7 @@ fn case_change_clamps_to_eol() {
 
 #[test]
 fn case_change_sets_marks() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 0));
     f.cmd_case_change(LeadParam::Pint(3), CaseMode::Upper);
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 3));
@@ -858,7 +860,7 @@ fn case_change_sets_marks() {
 
 #[test]
 fn case_change_backward_sets_marks() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 5));
     f.cmd_case_change(LeadParam::Nint(3), CaseMode::Upper);
     assert_eq!(f.marks.get(MarkId::Modified).unwrap(), Position::new(0, 2));
@@ -867,7 +869,7 @@ fn case_change_backward_sets_marks() {
 
 #[test]
 fn case_change_non_alpha_unchanged() {
-    let mut f = Frame::from_str("h3llo!\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "h3llo!\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_case_change(LeadParam::Pint(6), CaseMode::Upper);
     assert!(result.is_success());
@@ -877,7 +879,7 @@ fn case_change_non_alpha_unchanged() {
 #[test]
 fn case_edit_non_alpha_triggers_uppercase() {
     // *E: after a non-letter (digit), next letter becomes uppercase
-    let mut f = Frame::from_str("abc1def\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "abc1def\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_case_change(LeadParam::Pint(7), CaseMode::Edit);
     assert!(result.is_success());
@@ -886,14 +888,14 @@ fn case_edit_non_alpha_triggers_uppercase() {
 
 #[test]
 fn case_change_rejects_marker_lead() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     let result = f.cmd_case_change(LeadParam::Marker(MarkId::Dot), CaseMode::Upper);
     assert!(!result.is_success());
 }
 
 #[test]
 fn case_up_zero_count_noop() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_case_change(LeadParam::Pint(0), CaseMode::Upper);
     assert!(result.is_success());
@@ -903,7 +905,7 @@ fn case_up_zero_count_noop() {
 
 #[test]
 fn case_backward_at_col0_noop() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_case_change(LeadParam::Minus, CaseMode::Upper);
     assert!(result.is_success());
@@ -915,7 +917,7 @@ fn case_backward_at_col0_noop() {
 
 #[test]
 fn delete_line_single_from_first() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::None);
     assert!(result.is_success());
@@ -925,7 +927,7 @@ fn delete_line_single_from_first() {
 
 #[test]
 fn delete_line_single_from_middle() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(1, 3));
     let result = f.cmd_delete_line(LeadParam::None);
     assert!(result.is_success());
@@ -936,7 +938,7 @@ fn delete_line_single_from_middle() {
 
 #[test]
 fn delete_line_single_last_line() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(2, 0));
     let result = f.cmd_delete_line(LeadParam::None);
     assert!(result.is_success());
@@ -946,7 +948,7 @@ fn delete_line_single_last_line() {
 
 #[test]
 fn delete_line_single_only_line() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_delete_line(LeadParam::None);
     assert!(result.is_success());
@@ -956,7 +958,7 @@ fn delete_line_single_only_line() {
 
 #[test]
 fn delete_line_multiple_forward() {
-    let mut f = Frame::from_str("line1\nline2\nline3\nline4\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\nline4\n");
     f.set_dot(Position::new(1, 2));
     let result = f.cmd_delete_line(LeadParam::Pint(2));
     assert!(result.is_success());
@@ -967,7 +969,7 @@ fn delete_line_multiple_forward() {
 
 #[test]
 fn delete_line_forward_past_end_fails() {
-    let mut f = Frame::from_str("line1\nline2\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::Pint(3));
     assert!(!result.is_success());
@@ -976,14 +978,14 @@ fn delete_line_forward_past_end_fails() {
 
 #[test]
 fn delete_line_on_empty_frame_fails() {
-    let mut f = Frame::new();
+    let mut f = Frame::new(TEST_FRAME_NAME);
     let result = f.cmd_delete_line(LeadParam::None);
     assert!(!result.is_success());
 }
 
 #[test]
 fn delete_line_backward_single() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(2, 3));
     let result = f.cmd_delete_line(LeadParam::Minus);
     assert!(result.is_success());
@@ -994,7 +996,7 @@ fn delete_line_backward_single() {
 
 #[test]
 fn delete_line_backward_multiple() {
-    let mut f = Frame::from_str("line1\nline2\nline3\nline4\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\nline4\n");
     f.set_dot(Position::new(3, 0));
     let result = f.cmd_delete_line(LeadParam::Nint(2));
     assert!(result.is_success());
@@ -1004,7 +1006,7 @@ fn delete_line_backward_multiple() {
 
 #[test]
 fn delete_line_backward_at_first_line_fails() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::Minus);
     assert!(!result.is_success());
@@ -1013,7 +1015,7 @@ fn delete_line_backward_at_first_line_fails() {
 
 #[test]
 fn delete_line_backward_too_many_fails() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(1, 0));
     let result = f.cmd_delete_line(LeadParam::Nint(3));
     assert!(!result.is_success());
@@ -1022,7 +1024,7 @@ fn delete_line_backward_too_many_fails() {
 
 #[test]
 fn delete_line_pindef_from_beginning() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::Pindef);
     assert!(result.is_success());
@@ -1031,7 +1033,7 @@ fn delete_line_pindef_from_beginning() {
 
 #[test]
 fn delete_line_pindef_from_middle() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(1, 2));
     let result = f.cmd_delete_line(LeadParam::Pindef);
     assert!(result.is_success());
@@ -1041,7 +1043,7 @@ fn delete_line_pindef_from_middle() {
 
 #[test]
 fn delete_line_nindef() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(2, 0));
     let result = f.cmd_delete_line(LeadParam::Nindef);
     assert!(result.is_success());
@@ -1051,7 +1053,7 @@ fn delete_line_nindef() {
 
 #[test]
 fn delete_line_nindef_at_first_fails() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::Nindef);
     assert!(!result.is_success());
@@ -1059,7 +1061,7 @@ fn delete_line_nindef_at_first_fails() {
 
 #[test]
 fn delete_line_zero_count_noop() {
-    let mut f = Frame::from_str("hello\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::Pint(0));
     assert!(result.is_success());
@@ -1068,7 +1070,7 @@ fn delete_line_zero_count_noop() {
 
 #[test]
 fn delete_line_preserves_column_in_virtual_space() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(0, 20)); // virtual space
     let result = f.cmd_delete_line(LeadParam::None);
     assert!(result.is_success());
@@ -1078,7 +1080,7 @@ fn delete_line_preserves_column_in_virtual_space() {
 
 #[test]
 fn delete_line_sets_marks() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(1, 2));
     f.cmd_delete_line(LeadParam::None);
     assert!(f.marks.get(MarkId::Modified).is_some());
@@ -1087,7 +1089,7 @@ fn delete_line_sets_marks() {
 
 #[test]
 fn delete_line_with_trailing_newline() {
-    let mut f = Frame::from_str("line1\nline2\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\n");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_delete_line(LeadParam::None);
     assert!(result.is_success());
@@ -1096,7 +1098,7 @@ fn delete_line_with_trailing_newline() {
 
 #[test]
 fn delete_line_marker() {
-    let mut f = Frame::from_str("line1\nline2\nline3\nline4\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\nline4\n");
     f.set_dot(Position::new(1, 0));
     f.marks.set(MarkId::Numbered(1), Position::new(2, 3));
     let result = f.cmd_delete_line(LeadParam::Marker(MarkId::Numbered(1)));
@@ -1107,7 +1109,7 @@ fn delete_line_marker() {
 
 #[test]
 fn delete_line_marker_before_dot() {
-    let mut f = Frame::from_str("line1\nline2\nline3\nline4\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\nline4\n");
     f.set_dot(Position::new(2, 0));
     f.marks.set(MarkId::Numbered(1), Position::new(1, 0));
     let result = f.cmd_delete_line(LeadParam::Marker(MarkId::Numbered(1)));
@@ -1120,7 +1122,7 @@ fn delete_line_marker_before_dot() {
 
 #[test]
 fn next_find_single_char_forward() {
-    let mut f = Frame::from_str("hello world");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("w"));
     assert!(result.is_success());
@@ -1131,7 +1133,7 @@ fn next_find_single_char_forward() {
 
 #[test]
 fn next_find_char_from_set() {
-    let mut f = Frame::from_str("hello world");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("ow"));
     assert!(result.is_success());
@@ -1141,7 +1143,7 @@ fn next_find_char_from_set() {
 
 #[test]
 fn next_find_with_range() {
-    let mut f = Frame::from_str("abc123def");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "abc123def");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("0..9"));
     assert!(result.is_success());
@@ -1150,7 +1152,7 @@ fn next_find_with_range() {
 
 #[test]
 fn next_find_nth_occurrence() {
-    let mut f = Frame::from_str("abracadabra");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "abracadabra");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::Pint(3), &TrailParam::from_str("a"));
     assert!(result.is_success());
@@ -1160,7 +1162,7 @@ fn next_find_nth_occurrence() {
 
 #[test]
 fn next_skips_char_at_dot() {
-    let mut f = Frame::from_str("aaa");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "aaa");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("a"));
     assert!(result.is_success());
@@ -1170,7 +1172,7 @@ fn next_skips_char_at_dot() {
 
 #[test]
 fn next_not_found_fails() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("z"));
     assert!(!result.is_success());
@@ -1180,7 +1182,7 @@ fn next_not_found_fails() {
 
 #[test]
 fn next_crosses_lines() {
-    let mut f = Frame::from_str("hello\nworld");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello\nworld");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("w"));
     assert!(result.is_success());
@@ -1189,7 +1191,7 @@ fn next_crosses_lines() {
 
 #[test]
 fn next_backward_single() {
-    let mut f = Frame::from_str("hello world");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world");
     f.set_dot(Position::new(0, 10));
     let result = f.cmd_next(LeadParam::Minus, &TrailParam::from_str("o"));
     assert!(result.is_success());
@@ -1200,7 +1202,7 @@ fn next_backward_single() {
 #[test]
 fn next_backward_skips_adjacent() {
     // N backward skips the char immediately before dot
-    let mut f = Frame::from_str("abab");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "abab");
     f.set_dot(Position::new(0, 3)); // at 'b'
     let result = f.cmd_next(LeadParam::Minus, &TrailParam::from_str("a"));
     assert!(result.is_success());
@@ -1211,7 +1213,7 @@ fn next_backward_skips_adjacent() {
 
 #[test]
 fn next_backward_not_found_fails() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 2));
     let result = f.cmd_next(LeadParam::Minus, &TrailParam::from_str("z"));
     assert!(!result.is_success());
@@ -1220,7 +1222,7 @@ fn next_backward_not_found_fails() {
 
 #[test]
 fn next_backward_nth() {
-    let mut f = Frame::from_str("abracadabra");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "abracadabra");
     f.set_dot(Position::new(0, 10)); // at last 'a'
     let result = f.cmd_next(LeadParam::Nint(2), &TrailParam::from_str("a"));
     assert!(result.is_success());
@@ -1231,14 +1233,14 @@ fn next_backward_nth() {
 
 #[test]
 fn next_rejects_pindef() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     let result = f.cmd_next(LeadParam::Pindef, &TrailParam::from_str("h"));
     assert!(!result.is_success());
 }
 
 #[test]
 fn next_zero_count_sets_equals() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_next(LeadParam::Pint(0), &TrailParam::from_str("h"));
     assert!(result.is_success());
@@ -1250,7 +1252,7 @@ fn next_zero_count_sets_equals() {
 
 #[test]
 fn bridge_skips_matching_chars() {
-    let mut f = Frame::from_str("   hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "   hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str(" "));
     assert!(result.is_success());
@@ -1262,7 +1264,7 @@ fn bridge_skips_matching_chars() {
 #[test]
 fn bridge_no_matching_chars_succeeds_without_moving() {
     // If char at dot is NOT in the set, dot doesn't move and command succeeds
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str(" "));
     assert!(result.is_success());
@@ -1272,7 +1274,7 @@ fn bridge_no_matching_chars_succeeds_without_moving() {
 #[test]
 fn bridge_all_matching_stops_at_eol() {
     // All chars on line match, BR skips past them to EOL position
-    let mut f = Frame::from_str("aaa");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "aaa");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str("a"));
     assert!(result.is_success());
@@ -1281,7 +1283,7 @@ fn bridge_all_matching_stops_at_eol() {
 
 #[test]
 fn bridge_with_range() {
-    let mut f = Frame::from_str("123abc");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "123abc");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str("0..9"));
     assert!(result.is_success());
@@ -1290,7 +1292,7 @@ fn bridge_with_range() {
 
 #[test]
 fn bridge_backward() {
-    let mut f = Frame::from_str("abc   ");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "abc   ");
     f.set_dot(Position::new(0, 6)); // past end (virtual space)
     let result = f.cmd_bridge(LeadParam::Minus, &TrailParam::from_str(" "));
     assert!(result.is_success());
@@ -1301,7 +1303,7 @@ fn bridge_backward() {
 #[test]
 fn bridge_backward_at_start_succeeds() {
     // Bridge backward at start of file succeeds
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_bridge(LeadParam::Minus, &TrailParam::from_str("a..z"));
     assert!(result.is_success());
@@ -1310,14 +1312,14 @@ fn bridge_backward_at_start_succeeds() {
 
 #[test]
 fn bridge_rejects_pint() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     let result = f.cmd_bridge(LeadParam::Pint(3), &TrailParam::from_str("h"));
     assert!(!result.is_success());
 }
 
 #[test]
 fn bridge_crosses_lines() {
-    let mut f = Frame::from_str("aaa\naab");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "aaa\naab");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str("a"));
     assert!(result.is_success());
@@ -1334,7 +1336,7 @@ fn bridge_crosses_lines() {
 
 #[test]
 fn next_finds_unicode_char() {
-    let mut f = Frame::from_str("hello wörld");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello wörld");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("ö"));
     assert!(result.is_success());
@@ -1344,7 +1346,7 @@ fn next_finds_unicode_char() {
 #[test]
 fn next_unicode_range() {
     // Range with unicode characters
-    let mut f = Frame::from_str("abc\u{00e0}\u{00e1}\u{00e2}def");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "abc\u{00e0}\u{00e1}\u{00e2}def");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("\u{00e0}..\u{00e2}"));
     assert!(result.is_success());
@@ -1353,7 +1355,7 @@ fn next_unicode_range() {
 
 #[test]
 fn bridge_skips_unicode_chars() {
-    let mut f = Frame::from_str("ääähello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "ääähello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_bridge(LeadParam::None, &TrailParam::from_str("ä"));
     assert!(result.is_success());
@@ -1365,7 +1367,7 @@ fn bridge_skips_unicode_chars() {
 #[test]
 fn next_then_bridge_round_trip() {
     // N finds first digit, BR skips past all digits
-    let mut f = Frame::from_str("abc123def");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "abc123def");
     f.set_dot(Position::new(0, 0));
     // Find first digit
     let result = f.cmd_next(LeadParam::None, &TrailParam::from_str("0..9"));
@@ -1381,7 +1383,7 @@ fn next_then_bridge_round_trip() {
 
 #[test]
 fn zl_move_left_one() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_left(LeadParam::None);
     assert!(result.is_success());
@@ -1391,7 +1393,7 @@ fn zl_move_left_one() {
 
 #[test]
 fn zl_move_left_n() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 5));
     let result = f.cmd_left(LeadParam::Pint(3));
     assert!(result.is_success());
@@ -1400,7 +1402,7 @@ fn zl_move_left_n() {
 
 #[test]
 fn zl_at_col0_fails() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_left(LeadParam::None);
     assert!(!result.is_success());
@@ -1408,7 +1410,7 @@ fn zl_at_col0_fails() {
 
 #[test]
 fn zl_not_enough_columns_fails() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 2));
     let result = f.cmd_left(LeadParam::Pint(5));
     assert!(!result.is_success());
@@ -1416,7 +1418,7 @@ fn zl_not_enough_columns_fails() {
 
 #[test]
 fn zl_pindef_goes_to_col0() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 4));
     let result = f.cmd_left(LeadParam::Pindef);
     assert!(result.is_success());
@@ -1425,7 +1427,7 @@ fn zl_pindef_goes_to_col0() {
 
 #[test]
 fn zl_rejects_minus() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_left(LeadParam::Minus);
     assert!(!result.is_success());
@@ -1435,7 +1437,7 @@ fn zl_rejects_minus() {
 
 #[test]
 fn zr_move_right_one() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 2));
     let result = f.cmd_right(LeadParam::None);
     assert!(result.is_success());
@@ -1445,7 +1447,7 @@ fn zr_move_right_one() {
 
 #[test]
 fn zr_move_right_n() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_right(LeadParam::Pint(5));
     assert!(result.is_success());
@@ -1454,7 +1456,7 @@ fn zr_move_right_n() {
 
 #[test]
 fn zr_into_virtual_space() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 5));
     let result = f.cmd_right(LeadParam::Pint(10));
     assert!(result.is_success());
@@ -1463,7 +1465,7 @@ fn zr_into_virtual_space() {
 
 #[test]
 fn zr_pindef_goes_to_eol() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 1));
     let result = f.cmd_right(LeadParam::Pindef);
     assert!(result.is_success());
@@ -1472,7 +1474,7 @@ fn zr_pindef_goes_to_eol() {
 
 #[test]
 fn zr_rejects_minus() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     let result = f.cmd_right(LeadParam::Minus);
     assert!(!result.is_success());
 }
@@ -1481,7 +1483,7 @@ fn zr_rejects_minus() {
 
 #[test]
 fn zu_move_up_one() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(2, 3));
     let result = f.cmd_up(LeadParam::None);
     assert!(result.is_success());
@@ -1491,7 +1493,7 @@ fn zu_move_up_one() {
 
 #[test]
 fn zu_move_up_n() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(2, 4));
     let result = f.cmd_up(LeadParam::Pint(2));
     assert!(result.is_success());
@@ -1500,7 +1502,7 @@ fn zu_move_up_n() {
 
 #[test]
 fn zu_at_first_line_fails() {
-    let mut f = Frame::from_str("line1\nline2");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_up(LeadParam::None);
     assert!(!result.is_success());
@@ -1508,7 +1510,7 @@ fn zu_at_first_line_fails() {
 
 #[test]
 fn zu_not_enough_lines_fails() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(1, 0));
     let result = f.cmd_up(LeadParam::Pint(5));
     assert!(!result.is_success());
@@ -1516,7 +1518,7 @@ fn zu_not_enough_lines_fails() {
 
 #[test]
 fn zu_pindef_goes_to_first_line() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(2, 3));
     let result = f.cmd_up(LeadParam::Pindef);
     assert!(result.is_success());
@@ -1525,7 +1527,7 @@ fn zu_pindef_goes_to_first_line() {
 
 #[test]
 fn zu_preserves_virtual_column() {
-    let mut f = Frame::from_str("ab\nline2");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "ab\nline2");
     f.set_dot(Position::new(1, 10)); // virtual space
     let result = f.cmd_up(LeadParam::None);
     assert!(result.is_success());
@@ -1534,7 +1536,7 @@ fn zu_preserves_virtual_column() {
 
 #[test]
 fn zu_rejects_minus() {
-    let mut f = Frame::from_str("line1\nline2");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2");
     f.set_dot(Position::new(1, 0));
     let result = f.cmd_up(LeadParam::Minus);
     assert!(!result.is_success());
@@ -1544,7 +1546,7 @@ fn zu_rejects_minus() {
 
 #[test]
 fn zd_move_down_one() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_down(LeadParam::None);
     assert!(result.is_success());
@@ -1554,7 +1556,7 @@ fn zd_move_down_one() {
 
 #[test]
 fn zd_move_down_n() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(0, 4));
     let result = f.cmd_down(LeadParam::Pint(2));
     assert!(result.is_success());
@@ -1563,7 +1565,7 @@ fn zd_move_down_n() {
 
 #[test]
 fn zd_at_last_line_fails() {
-    let mut f = Frame::from_str("line1\nline2\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\n");
     f.set_dot(Position::new(2, 0));
     let result = f.cmd_down(LeadParam::None);
     assert!(!result.is_success());
@@ -1571,7 +1573,7 @@ fn zd_at_last_line_fails() {
 
 #[test]
 fn zd_not_enough_lines_fails() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(1, 0));
     let result = f.cmd_down(LeadParam::Pint(5));
     assert!(!result.is_success());
@@ -1579,7 +1581,7 @@ fn zd_not_enough_lines_fails() {
 
 #[test]
 fn zd_pindef_goes_to_last_line() {
-    let mut f = Frame::from_str("line1\nline2\nline3\n");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3\n");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_down(LeadParam::Pindef);
     assert!(result.is_success());
@@ -1588,7 +1590,7 @@ fn zd_pindef_goes_to_last_line() {
 
 #[test]
 fn zd_preserves_virtual_column() {
-    let mut f = Frame::from_str("line1\nab");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nab");
     f.set_dot(Position::new(0, 10)); // virtual space
     let result = f.cmd_down(LeadParam::None);
     assert!(result.is_success());
@@ -1597,7 +1599,7 @@ fn zd_preserves_virtual_column() {
 
 #[test]
 fn zd_rejects_minus() {
-    let mut f = Frame::from_str("line1\nline2");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_down(LeadParam::Minus);
     assert!(!result.is_success());
@@ -1607,7 +1609,7 @@ fn zd_rejects_minus() {
 
 #[test]
 fn zc_advance_one_line() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_return(LeadParam::None);
     assert!(result.is_success());
@@ -1616,7 +1618,7 @@ fn zc_advance_one_line() {
 
 #[test]
 fn zc_advance_n_lines() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_return(LeadParam::Pint(2));
     assert!(result.is_success());
@@ -1625,7 +1627,7 @@ fn zc_advance_n_lines() {
 
 #[test]
 fn zc_advance_backward_rejected() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     f.set_dot(Position::new(2, 3));
     let result = f.cmd_return(LeadParam::Minus);
     assert!(!result.is_success());
@@ -1633,7 +1635,7 @@ fn zc_advance_backward_rejected() {
 
 #[test]
 fn zc_on_last_line_extends_buffer() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     // "line1\nline2\nline3\n" has 4 lines (0..3), line 3 is empty trailing
     f.set_dot(Position::new(3, 0));
     let result = f.cmd_return(LeadParam::None);
@@ -1644,7 +1646,7 @@ fn zc_on_last_line_extends_buffer() {
 
 #[test]
 fn zc_on_content_line_extends_buffer() {
-    let mut f = Frame::from_str("line1\nline2\nline3");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "line1\nline2\nline3");
     // Dot on last content line (line 2), ZC should go to line 3 (trailing empty line)
     f.set_dot(Position::new(2, 3));
     let result = f.cmd_return(LeadParam::None);
@@ -1656,7 +1658,7 @@ fn zc_on_content_line_extends_buffer() {
 
 #[test]
 fn zc_multiple_past_end_extends_buffer() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     // "hello\n" has 2 lines (0, 1). Dot on line 0, 3ZC needs line 3
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_return(LeadParam::Pint(3));
@@ -1669,7 +1671,7 @@ fn zc_multiple_past_end_extends_buffer() {
 
 #[test]
 fn zz_delete_one_char_left() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_rubout(LeadParam::None);
     assert!(result.is_success());
@@ -1679,7 +1681,7 @@ fn zz_delete_one_char_left() {
 
 #[test]
 fn zz_delete_n_chars_left() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 4));
     let result = f.cmd_rubout(LeadParam::Pint(3));
     assert!(result.is_success());
@@ -1689,7 +1691,7 @@ fn zz_delete_n_chars_left() {
 
 #[test]
 fn zz_at_col0_fails() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 0));
     let result = f.cmd_rubout(LeadParam::None);
     assert!(!result.is_success());
@@ -1697,7 +1699,7 @@ fn zz_at_col0_fails() {
 
 #[test]
 fn zz_not_enough_chars_fails() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 2));
     let result = f.cmd_rubout(LeadParam::Pint(5));
     assert!(!result.is_success());
@@ -1705,7 +1707,7 @@ fn zz_not_enough_chars_fails() {
 
 #[test]
 fn zz_pindef_deletes_to_col0() {
-    let mut f = Frame::from_str("hello world");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello world");
     f.set_dot(Position::new(0, 5));
     let result = f.cmd_rubout(LeadParam::Pindef);
     assert!(result.is_success());
@@ -1715,7 +1717,7 @@ fn zz_pindef_deletes_to_col0() {
 
 #[test]
 fn zz_rejects_minus() {
-    let mut f = Frame::from_str("hello");
+    let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 3));
     let result = f.cmd_rubout(LeadParam::Minus);
     assert!(!result.is_success());

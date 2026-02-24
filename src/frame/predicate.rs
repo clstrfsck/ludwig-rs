@@ -121,6 +121,10 @@ impl PredicateCommands for Frame {
     }
 
     fn cmd_eqs(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
+        if tpar.delim == '`' {
+            return self.cmd_eqs_pattern(lead_param, tpar);
+        }
+
         let case_sensitive = tpar.delim == '"';
         let cmp = self.text_compare_at(self.dot(), &tpar.content, case_sensitive);
 
@@ -170,6 +174,28 @@ impl PredicateCommands for Frame {
 }
 
 impl Frame {
+    /// EQS command via pattern (backtick delimiter).
+    fn cmd_eqs_pattern(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
+        let pattern = match crate::pattern::parse(&tpar.content) {
+            Ok(p) => p,
+            Err(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        let dot = self.dot();
+        let ctx = match self.make_match_ctx(dot.line) {
+            Some(c) => c,
+            None => return CmdResult::Failure(CmdFailure::OutOfRange),
+        };
+
+        let matches = crate::pattern::match_at(&pattern, &ctx, dot.column).is_some();
+        let result = match lead_param {
+            LeadParam::None | LeadParam::Plus => matches,
+            LeadParam::Minus => !matches,
+            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+        bool_result(result)
+    }
+
     /// Check if dot is at end-of-page (last null line).
     fn is_at_eop(&self) -> bool {
         let num_lines = self.line_count();
@@ -177,8 +203,7 @@ impl Frame {
             return true;
         }
         // The last line is the null line (the one after the last newline)
-        self.dot().line >= num_lines - 1
-            && self.line_length_excluding_newline(num_lines - 1) == 0
+        self.dot().line >= num_lines - 1 && self.line_length_excluding_newline(num_lines - 1) == 0
     }
 
     /// Compare text at a given position with a pattern string.
