@@ -321,6 +321,11 @@ fn dispatch_cmd(
         CmdOp::WordAdvance => ctx.current_frame_mut().cmd_word_advance(lead),
         CmdOp::WordDelete => ctx.current_frame_mut().cmd_word_delete(lead),
         CmdOp::LineSquash => ctx.current_frame_mut().cmd_line_squeeze(lead),
+        CmdOp::LineFill => ctx.current_frame_mut().cmd_line_fill(lead),
+        CmdOp::LineJustify => ctx.current_frame_mut().cmd_line_justify(lead),
+        CmdOp::LineCentre => ctx.current_frame_mut().cmd_line_centre(lead),
+        CmdOp::LineLeft => ctx.current_frame_mut().cmd_line_left(lead),
+        CmdOp::LineRight => ctx.current_frame_mut().cmd_line_right(lead),
         CmdOp::DittoUp => ctx.current_frame_mut().cmd_ditto_up(lead),
         CmdOp::DittoDown => ctx.current_frame_mut().cmd_ditto_down(lead),
         // Window commands are no-ops in batch mode; handled by App in interactive mode.

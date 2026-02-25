@@ -23,7 +23,7 @@ use crate::marks::{MarkId, MarkSet};
 use crate::position::Position;
 
 /// An editable text frame with support for virtual space and marks.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Frame {
     /// The name of the frame.
     name: String,
@@ -33,6 +33,16 @@ pub struct Frame {
     marks: MarkSet,
     /// Compiled code for the frame
     code: Option<CompiledCode>,
+    /// Left margin column (0-based). Text should start at or after this column.
+    pub left_margin: usize,
+    /// Right margin: maximum line length. Lines should be at most this many characters.
+    pub right_margin: usize,
+}
+
+impl Default for Frame {
+    fn default() -> Self {
+        Self::new("")
+    }
 }
 
 impl fmt::Display for Frame {
@@ -50,6 +60,8 @@ impl Frame {
             rope: Rope::new(),
             marks: MarkSet::new(),
             code: None,
+            left_margin: 0,
+            right_margin: 79,
         }
     }
 
@@ -64,6 +76,8 @@ impl Frame {
             rope: r,
             marks: MarkSet::new(),
             code: None,
+            left_margin: 0,
+            right_margin: 79,
         }
     }
 }
@@ -351,12 +365,11 @@ impl Frame {
             .chars()
             .filter(|&c| c != '\n' && c != '\r')
             .collect();
-        let len = line_chars.len();
         Some(crate::pattern::MatchCtx {
             line: line_chars,
             dot_col: self.dot().column,
-            left_margin: 0,
-            right_margin: len,
+            left_margin: self.left_margin,
+            right_margin: self.right_margin,
             line_idx,
             marks: self.marks.clone(),
         })

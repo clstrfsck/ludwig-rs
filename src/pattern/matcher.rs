@@ -8,6 +8,7 @@ use super::ast::*;
 use super::char_class::charset_matches;
 
 /// Context provided to the matcher for a single line.
+#[derive(Debug, Clone)]
 pub struct MatchCtx {
     /// Line content as a character vector (no trailing newline).
     pub line: Vec<char>,
@@ -24,6 +25,7 @@ pub struct MatchCtx {
 }
 
 /// The result of a successful pattern match.
+#[derive(Debug, Clone, Copy)]
 pub struct MatchResult {
     /// Column of the start of the middle context. Becomes the new Equals mark.
     pub middle_start: usize,
@@ -167,15 +169,11 @@ fn match_compound(
         return Some(pos); // empty compound = always match
     }
     for seq in &compound.alternatives {
-        if let Some(end) = match_sequence(seq, ctx, pos, steps) {
+        if let Some(end) = match_items_backtrack(&seq.items, ctx, pos, steps) {
             return Some(end);
         }
     }
     None
-}
-
-fn match_sequence(seq: &Sequence, ctx: &MatchCtx, pos: usize, steps: &mut usize) -> Option<usize> {
-    match_items_backtrack(&seq.items, ctx, pos, steps)
 }
 
 /// Backtracking sequence matcher.
@@ -205,28 +203,59 @@ fn match_items_backtrack(
     None
 }
 
+enum ItemIter {
+    Single(std::option::IntoIter<usize>),
+    Greedy(std::iter::Rev<std::vec::IntoIter<usize>>),
+}
+
+impl Iterator for ItemIter {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            ItemIter::Single(iter) => iter.next(),
+            ItemIter::Greedy(iter) => iter.next(),
+        }
+    }
+}
+
 /// Return candidate end positions for `item` starting at `pos`, in greedy-first
 /// order (most characters consumed first).
-fn item_positions(item: &Item, ctx: &MatchCtx, pos: usize, steps: &mut usize) -> Vec<usize> {
+fn item_positions(item: &Item, ctx: &MatchCtx, pos: usize, steps: &mut usize) -> ItemIter {
     match &item.quantifier {
-        Quantifier::Once => match match_element_once(&item.element, ctx, pos, steps) {
-            Some(p) => vec![p],
-            None => vec![],
-        },
-        Quantifier::ZeroOrMore => {
-            greedy_positions(&item.element, ctx, pos, 0, ctx.line.len() + 2, steps)
+        Quantifier::Once => {
+            ItemIter::Single(match_element_once(&item.element, ctx, pos, steps).into_iter())
         }
-        Quantifier::OneOrMore => {
-            greedy_positions(&item.element, ctx, pos, 1, ctx.line.len() + 2, steps)
+        Quantifier::ZeroOrMore => ItemIter::Greedy(greedy_positions(
+            &item.element,
+            ctx,
+            pos,
+            0,
+            ctx.line.len() + 2,
+            steps,
+        )),
+        Quantifier::OneOrMore => ItemIter::Greedy(greedy_positions(
+            &item.element,
+            ctx,
+            pos,
+            1,
+            ctx.line.len() + 2,
+            steps,
+        )),
+        Quantifier::Exactly(n) => {
+            ItemIter::Single(exact_matches(&item.element, ctx, pos, *n, steps).into_iter())
         }
-        Quantifier::Exactly(n) => match exact_matches(&item.element, ctx, pos, *n, steps) {
-            Some(p) => vec![p],
-            None => vec![],
-        },
-        Quantifier::AtLeast(n) => {
-            greedy_positions(&item.element, ctx, pos, *n, ctx.line.len() + 2, steps)
+        Quantifier::AtLeast(n) => ItemIter::Greedy(greedy_positions(
+            &item.element,
+            ctx,
+            pos,
+            *n,
+            ctx.line.len() + 2,
+            steps,
+        )),
+        Quantifier::Between(lo, hi) => {
+            ItemIter::Greedy(greedy_positions(&item.element, ctx, pos, *lo, *hi, steps))
         }
-        Quantifier::Between(lo, hi) => greedy_positions(&item.element, ctx, pos, *lo, *hi, steps),
     }
 }
 
@@ -239,7 +268,7 @@ fn greedy_positions(
     min: usize,
     max: usize,
     steps: &mut usize,
-) -> Vec<usize> {
+) -> std::iter::Rev<std::vec::IntoIter<usize>> {
     let mut positions = Vec::new();
     let mut cur = start;
     let mut count = 0usize;
@@ -259,8 +288,7 @@ fn greedy_positions(
             _ => break, // no progress (zero-width infinite loop guard) or no match
         }
     }
-    positions.reverse(); // greedy-first = most-first
-    positions
+    positions.into_iter().rev() // greedy-first = most-first
 }
 
 fn exact_matches(
@@ -519,7 +547,7 @@ mod tests {
     #[test]
     fn backward_finds_last() {
         // Find rightmost 'A' at or before col 4 in "abcde"
-        // 'a'=0,'b'=1,'c'=2,'d'=3,'e'=4  — last at col<=4 is 'd' (pos 3..4)
+        // 'a'=0,'b'=1,'c'=2,'d'=3,'e'=4  — last at col<=4 is 'd' (pos 4..5)
         assert_eq!(bwd("A", "abcde", 4), Some((4, 5)));
     }
 

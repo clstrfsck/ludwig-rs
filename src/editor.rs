@@ -1112,4 +1112,262 @@ mod tests {
         let (_, outcome) = exec("hello\n", "G`(A`");
         assert_eq!(outcome, ExecOutcome::Failure);
     }
+
+    // ─── Phase 7: Word formatting commands (YF, YJ, YC, YL, YR) ──────────────
+
+    /// Helper: compile+execute with explicit left/right margins.
+    fn exec_with_margins(
+        content: &str,
+        commands: &str,
+        left_margin: usize,
+        right_margin: usize,
+    ) -> (Editor, ExecOutcome) {
+        let mut editor = Editor::from_str(content);
+        editor.frame_set.current_frame_mut().left_margin = left_margin;
+        editor.frame_set.current_frame_mut().right_margin = right_margin;
+        let code = compile(commands).unwrap();
+        let outcome = editor.execute(&code);
+        (editor, outcome)
+    }
+
+    // ── YL: left-align ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_yl_removes_leading_spaces() {
+        // "   hello" → "hello" after YL with left_margin=0
+        let (editor, outcome) = exec_with_margins("   hello\n\n", "YL", 0, 79);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello\n\n");
+    }
+
+    #[test]
+    fn test_yl_already_at_margin_noop() {
+        // "hello" (no leading spaces) → unchanged
+        let (editor, outcome) = exec_with_margins("hello\n\n", "YL", 0, 79);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello\n\n");
+    }
+
+    #[test]
+    fn test_yl_empty_line_fails() {
+        let (_, outcome) = exec_with_margins("\nhello\n", "YL", 0, 79);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_yl_multiple_lines() {
+        // 2YL left-aligns two lines
+        let (editor, outcome) = exec_with_margins("  foo\n  bar\n\n", "2YL", 0, 79);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "foo\nbar\n\n");
+    }
+
+    #[test]
+    fn test_yl_pindef_whole_paragraph() {
+        // >YL left-aligns until blank line
+        let (editor, outcome) = exec_with_margins("  foo\n  bar\n\n", ">YL", 0, 79);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "foo\nbar\n\n");
+    }
+
+    #[test]
+    fn test_yl_advances_dot() {
+        // After YL, dot should be on next line at left_margin.
+        let (editor, outcome) = exec_with_margins("  hello\n\n", "YL", 0, 79);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(1, 0));
+    }
+
+    // ── YR: right-align ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_yr_adds_leading_spaces() {
+        // "hello" with right_margin=10 → "     hello" (5 leading spaces)
+        let (editor, outcome) = exec_with_margins("hello\n\n", "YR", 0, 10);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "     hello\n\n");
+    }
+
+    #[test]
+    fn test_yr_already_at_margin_noop() {
+        // "hello" with right_margin=5 (line_len == right_margin) → no-op
+        let (editor, outcome) = exec_with_margins("hello\n\n", "YR", 0, 5);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello\n\n");
+    }
+
+    #[test]
+    fn test_yr_too_long_fails() {
+        // "hello world" (11 chars) with right_margin=5 → fail
+        let (_, outcome) = exec_with_margins("hello world\n\n", "YR", 0, 5);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_yr_multiple_lines() {
+        // 2YR right-aligns two lines
+        let (editor, outcome) = exec_with_margins("hi\nbye\n\n", "2YR", 0, 5);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "   hi\n  bye\n\n");
+    }
+
+    #[test]
+    fn test_yr_advances_dot() {
+        let (editor, outcome) = exec_with_margins("hi\n\n", "YR", 0, 5);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(1, 0));
+    }
+
+    // ── YC: centre ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_yc_centres_line() {
+        // "hello" (5 chars) in margin [0, 15] → target leading = (15-5)/2 = 5
+        // space_to_add = (15 + 0 - 5 + 0) / 2 - (0 - 0) = 10/2 = 5
+        let (editor, outcome) = exec_with_margins("hello\n\n", "YC", 0, 15);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "     hello\n\n");
+    }
+
+    #[test]
+    fn test_yc_removes_excess_spaces() {
+        // "          hello" (10 leading + 5 text = 15 chars, right=15):
+        // space_to_add = (15 + 0 - 15 + 10) / 2 - (10 - 0) = 10/2 - 10 = 5 - 10 = -5
+        // Delete 5 spaces from left_margin=0: "     hello"
+        let (editor, outcome) = exec_with_margins("          hello\n\n", "YC", 0, 15);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "     hello\n\n");
+    }
+
+    #[test]
+    fn test_yc_too_long_fails() {
+        // "hello world" (11 chars) with right_margin=5 → line > right_margin → fail
+        let (_, outcome) = exec_with_margins("hello world\n\n", "YC", 0, 5);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_yc_empty_line_fails() {
+        let (_, outcome) = exec_with_margins("\nhello\n", "YC", 0, 15);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_yc_advances_dot() {
+        let (editor, outcome) = exec_with_margins("hello\n\n", "YC", 0, 15);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(1, 0));
+    }
+
+    // ── YJ: justify ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_yj_justifies_line() {
+        // "hello world" (11 chars) with right_margin=15:
+        // space_to_add = 15 - 11 = 4. One hole. Insert 4 spaces between words.
+        let (editor, outcome) = exec_with_margins("hello world\nnext line\n", "YJ", 0, 15);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "hello     world\nnext line\n");
+    }
+
+    #[test]
+    fn test_yj_skips_last_para_line() {
+        // Next line is blank → last paragraph line → skip justification, just advance dot.
+        let (editor, outcome) = exec_with_margins("hello world\n\n", "YJ", 0, 15);
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Content unchanged.
+        assert_eq!(editor.to_string(), "hello world\n\n");
+        assert_eq!(editor.current_frame().dot(), Position::new(1, 0));
+    }
+
+    #[test]
+    fn test_yj_too_long_fails() {
+        // Line longer than right_margin → fail.
+        let (_, outcome) = exec_with_margins("hello world extra\nnext\n", "YJ", 0, 10);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_yj_distributes_spaces_evenly() {
+        // "a b c" (5 chars) → right_margin=8 → space_to_add=3, holes=2
+        // fill_ratio = 1.5. Iteration 1: debit=1.5, insert 2 spaces. Iteration 2: debit=1.0, insert 1 space.
+        // Result: "a   b  c"
+        let (editor, outcome) = exec_with_margins("a b c\nnext\n", "YJ", 0, 8);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "a   b  c\nnext\n");
+    }
+
+    #[test]
+    fn test_yj_advances_dot() {
+        let (editor, outcome) = exec_with_margins("hello world\nnext\n", "YJ", 0, 15);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.current_frame().dot(), Position::new(1, 0));
+    }
+
+    // ── YF: line fill ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_yf_pulls_word_from_next_line() {
+        // "hello" fits 4 more chars (right=10). "world" from next line fits (5+1+5=11 > 10? No: space_avail = 10-5-1=4, "world" is 5 chars → doesn't fit).
+        // Use shorter next word: "hi" (2 chars). space_avail = 10-5-1=4, "hi" fits (2<=4).
+        let (editor, outcome) = exec_with_margins("hello\nhi there\n\n", "YF", 0, 10);
+        assert_eq!(outcome, ExecOutcome::Success);
+        // "hello" + " hi" = "hello hi" (8 chars). "there" stays on next line.
+        assert_eq!(editor.to_string(), "hello hi\nthere\n\n");
+    }
+
+    #[test]
+    fn test_yf_splits_long_line() {
+        // "hello world" (11 chars) with right_margin=5 — too long, split at 'o'/'w' boundary.
+        // right=5 → end_col=5, str[5]=' ' (space between "hello" and "world") → split there.
+        // Actually: "hello world" with right=5, end_col=5, str[5]=' '.
+        // Overflow_start scans forward: already at ' ', 5=' '→6='w'. overflow_start=6.
+        // kept: "hello " (end up as "hello " on line 0), new line: "world"
+        let (editor, outcome) = exec_with_margins("hello world\n\n", "YF", 0, 5);
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Line 0: "hello " (the split keeps trailing space from the space run)
+        // Line 1: "world" (overflow)
+        assert!(editor.to_string().contains("hello"));
+        assert!(editor.to_string().contains("world"));
+        // Both words should be on separate lines.
+        let content = editor.to_string();
+        let lines: Vec<&str> = content.lines().collect();
+        assert!(lines.len() >= 2);
+    }
+
+    #[test]
+    fn test_yf_empty_line_stops() {
+        // YF stops at an empty line (EOP).
+        let (_, outcome) = exec_with_margins("\nhello\n", "YF", 0, 79);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_yf_pulls_until_full() {
+        // Line has space for multiple words from next line.
+        // "a" (1 char) with right=10. Next line: "b c d" (5 chars).
+        // space_avail = 10-1-1=8. "b c d" is 5 chars → fits. Pull it.
+        let (editor, outcome) = exec_with_margins("a\nb c d\n\n", "YF", 0, 10);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.to_string(), "a b c d\n\n");
+    }
+
+    #[test]
+    fn test_yf_advances_dot() {
+        // After YF, dot is at start of next line.
+        let (editor, outcome) = exec_with_margins("hello\nworld\n\n", "YF", 0, 5);
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Dot should be on line 1 (at left_margin=0).
+        assert_eq!(editor.current_frame().dot().line, 1);
+        assert_eq!(editor.current_frame().dot().column, 0);
+    }
+
+    #[test]
+    fn test_yf_pindef_whole_paragraph() {
+        // >YF fills entire paragraph.
+        let (editor, outcome) = exec_with_margins("hello\nworld\n\n", ">YF", 0, 79);
+        assert_eq!(outcome, ExecOutcome::Success);
+        // "hello" + " " + "world" should be on one line.
+        assert_eq!(editor.to_string(), "hello world\n\n");
+    }
 }

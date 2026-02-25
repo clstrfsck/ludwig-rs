@@ -557,6 +557,31 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
         tpar_count: 0
     },
+    "yc" => CmdInfo {
+        op: CmdOp::LineCentre,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "yf" => CmdInfo {
+        op: CmdOp::LineFill,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "yj" => CmdInfo {
+        op: CmdOp::LineJustify,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "yl" => CmdInfo {
+        op: CmdOp::LineLeft,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "yr" => CmdInfo {
+        op: CmdOp::LineRight,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
     "ys" => CmdInfo {
         op: CmdOp::LineSquash,
         allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),

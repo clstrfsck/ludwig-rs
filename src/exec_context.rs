@@ -65,6 +65,17 @@ impl<'a> ExecutionContext<'a> {
                 MarkId::Numbered(n)
             }
             LeadParam::Marker(id) => id,
+            LeadParam::Minus => {
+                if let Some(old_span) = self.frame_set.remove_span(&span_name)
+                    && let Some(old_frame) = self.frame_set.get_frame_mut(&old_span.frame_name)
+                {
+                    old_frame.unset_mark(old_span.mark_start);
+                    old_frame.unset_mark(old_span.mark_end);
+                    return CmdResult::Success;
+                } else {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+            }
             _ => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
 
