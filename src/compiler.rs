@@ -397,6 +397,16 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus),
         tpar_count: 1
     },
+    "ed" => CmdInfo {
+        op: CmdOp::FrameEdit,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 1
+    },
+    "ek" => CmdInfo {
+        op: CmdOp::FrameKill,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 1
+    },
     "en" => CmdInfo {
         op: CmdOp::SpanExecuteNoRecompile,
         allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
@@ -436,6 +446,16 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         op: CmdOp::EqualString,
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pindef, Nindef),
         tpar_count: 1
+    },
+    "ep" => CmdInfo {
+        op: CmdOp::FrameParameters,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 1
+    },
+    "er" => CmdInfo {
+        op: CmdOp::FrameReturn,
+        allowed_leads: lead_param_mask!(None, Plus, Pint),
+        tpar_count: 0
     },
     "k" => CmdInfo {
         op: CmdOp::DeleteLine,
@@ -640,6 +660,16 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
     "'" => CmdInfo {
         op: CmdOp::DittoDown,
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
+        tpar_count: 0
+    },
+    "{" => CmdInfo {
+        op: CmdOp::SetMarginLeft,
+        allowed_leads: lead_param_mask!(None, Minus),
+        tpar_count: 0
+    },
+    "}" => CmdInfo {
+        op: CmdOp::SetMarginRight,
+        allowed_leads: lead_param_mask!(None, Minus),
         tpar_count: 0
     },
     "*e" => CmdInfo {

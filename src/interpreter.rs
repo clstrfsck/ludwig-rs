@@ -345,6 +345,13 @@ fn dispatch_cmd(
         CmdOp::SpanAssign => ctx.cmd_span_assign(lead, tpars),
         CmdOp::SpanIndex => ctx.cmd_span_index(),
         CmdOp::SpanCompile => ctx.cmd_span_compile(lead, tpars),
+        // Frame commands
+        CmdOp::FrameEdit => ctx.cmd_frame_edit(lead, tpars),
+        CmdOp::FrameKill => ctx.cmd_frame_kill(lead, tpars),
+        CmdOp::FrameReturn => ctx.cmd_frame_return(lead),
+        CmdOp::FrameParameters => ctx.cmd_frame_parameters(tpars),
+        CmdOp::SetMarginLeft => ctx.cmd_set_margin_left(lead),
+        CmdOp::SetMarginRight => ctx.cmd_set_margin_right(lead),
         // FIXME: remove this when everything is implemented
         _ => CmdResult::Failure(CmdFailure::NotImplemented),
     }

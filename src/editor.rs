@@ -1370,4 +1370,357 @@ mod tests {
         // "hello" + " " + "world" should be on one line.
         assert_eq!(editor.to_string(), "hello world\n\n");
     }
+
+    // ── ED: frame navigation ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_ed_switch_to_new_frame() {
+        let (editor, outcome) = exec("hello\n", "ED/OTHER/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_name(), "OTHER");
+        assert!(editor.frame_set.contains_frame("OTHER"));
+        // New frame is empty.
+        assert_eq!(editor.to_string(), "");
+    }
+
+    #[test]
+    fn test_ed_switch_to_existing_frame() {
+        // Create a second frame, switch back to first, then re-enter second.
+        let (mut editor, outcome) = exec("hello\n", "ED/B/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_name(), "B");
+        // Now switch back to LUDWIG.
+        let code = compile("ED/LUDWIG/").unwrap();
+        let outcome2 = editor.execute(&code);
+        assert_eq!(outcome2, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_name(), "LUDWIG");
+    }
+
+    #[test]
+    fn test_ed_same_frame_is_noop() {
+        let (editor, outcome) = exec("hello\n", "ED/LUDWIG/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_name(), "LUDWIG");
+        assert_eq!(editor.to_string(), "hello\n");
+    }
+
+    #[test]
+    fn test_ed_empty_tpar_switches_to_ludwig() {
+        // Switching to empty name = LUDWIG.
+        let (editor, outcome) = exec("hello\n", "ED//");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_name(), "LUDWIG");
+    }
+
+    #[test]
+    fn test_ed_sets_return_frame_name() {
+        let (editor, outcome) = exec("hello\n", "ED/OTHER/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        let other = editor.frame_set.get_frame("OTHER").unwrap();
+        assert_eq!(other.return_frame_name.as_deref(), Some("LUDWIG"));
+    }
+
+    #[test]
+    fn test_ed_new_frame_inherits_defaults() {
+        let mut editor = Editor::from_str("hello\n");
+        // Set left margin to 5, right to 60 on defaults via EP.
+        let code = compile("EP'$M=(6,60)'").unwrap();
+        editor.execute(&code);
+        // Now create a new frame — should inherit left=5, right=60.
+        let code2 = compile("ED/NEW/").unwrap();
+        editor.execute(&code2);
+        let new_frame = editor.frame_set.get_frame("NEW").unwrap();
+        assert_eq!(new_frame.left_margin, 5);
+        assert_eq!(new_frame.right_margin, 60);
+    }
+
+    // ── EK: frame kill ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ek_kills_another_frame() {
+        // Create frame B, go back to LUDWIG, kill B.
+        let (mut editor, _) = exec("hello\n", "ED/B/");
+        let code = compile("ED/LUDWIG/").unwrap();
+        editor.execute(&code);
+        let code2 = compile("EK/B/").unwrap();
+        let outcome = editor.execute(&code2);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert!(!editor.frame_set.contains_frame("B"));
+    }
+
+    #[test]
+    fn test_ek_fails_on_current_frame() {
+        let (mut editor, _) = exec("hello\n", "");
+        let code = compile("EK/LUDWIG/").unwrap();
+        let outcome = editor.execute(&code);
+        assert_eq!(outcome, ExecOutcome::Failure);
+        assert!(editor.frame_set.contains_frame("LUDWIG"));
+    }
+
+    #[test]
+    fn test_ek_fails_on_special_frame() {
+        let (mut editor, _) = exec("hello\n", "");
+        let code = compile("EK/COMMAND/").unwrap();
+        let outcome = editor.execute(&code);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_ek_fails_if_frame_not_exist() {
+        let (mut editor, _) = exec("hello\n", "");
+        let code = compile("EK/NOSUCHFRAME/").unwrap();
+        let outcome = editor.execute(&code);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    // ── ER: frame return ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_er_returns_to_previous_frame() {
+        let (mut editor, _) = exec("hello\n", "ED/B/");
+        assert_eq!(editor.frame_set.current_name(), "B");
+        let code = compile("ER").unwrap();
+        let outcome = editor.execute(&code);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_name(), "LUDWIG");
+    }
+
+    #[test]
+    fn test_er_fails_if_no_return_frame() {
+        let (mut editor, _) = exec("hello\n", "");
+        // LUDWIG has no return_frame_name set initially.
+        let code = compile("ER").unwrap();
+        let outcome = editor.execute(&code);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_er_multi_level() {
+        // ED/B/, ED/C/, then 2ER should land back on LUDWIG.
+        let (mut editor, _) = exec("hello\n", "ED/B/");
+        let code = compile("ED/C/").unwrap();
+        editor.execute(&code);
+        let code2 = compile("2ER").unwrap();
+        let outcome = editor.execute(&code2);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_name(), "LUDWIG");
+    }
+
+    // ── EP: keyboard mode ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ep_keyboard_mode_insert() {
+        use crate::frame::KeyboardMode;
+        let (editor, outcome) = exec("hello\n", "EP'K=I'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.keyboard_mode, KeyboardMode::Insert);
+    }
+
+    #[test]
+    fn test_ep_keyboard_mode_overtype() {
+        use crate::frame::KeyboardMode;
+        let (mut editor, _) = exec("hello\n", "EP'K=I'");
+        let code = compile("EP'K=O'").unwrap();
+        editor.execute(&code);
+        assert_eq!(editor.frame_set.keyboard_mode, KeyboardMode::Overtype);
+    }
+
+    #[test]
+    fn test_ep_keyboard_mode_command() {
+        use crate::frame::KeyboardMode;
+        let (editor, outcome) = exec("hello\n", "EP'K=C'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.keyboard_mode, KeyboardMode::Command);
+    }
+
+    // ── EP: options ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ep_option_auto_indent() {
+        let (editor, outcome) = exec("hello\n", "EP'O=I'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert!(editor.frame_set.current_frame().options.auto_indent);
+    }
+
+    #[test]
+    fn test_ep_option_auto_wrap() {
+        let (editor, outcome) = exec("hello\n", "EP'O=W'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert!(editor.frame_set.current_frame().options.auto_wrap);
+    }
+
+    #[test]
+    fn test_ep_option_toggle_then_clear() {
+        // Toggle on then explicitly clear.
+        let (mut editor, _) = exec("hello\n", "EP'O=I'");
+        let code = compile("EP'O=(-I)'").unwrap();
+        editor.execute(&code);
+        assert!(!editor.frame_set.current_frame().options.auto_indent);
+    }
+
+    #[test]
+    fn test_ep_option_set_initial_updates_defaults() {
+        let (editor, outcome) = exec("hello\n", "EP'$O=I'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert!(editor.frame_set.current_frame().options.auto_indent);
+        assert!(editor.frame_set.defaults.options.auto_indent);
+    }
+
+    // ── EP: LR margins ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ep_lr_margins() {
+        let (editor, outcome) = exec("hello\n", "EP'M=(5,60)'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // left_margin is 0-based: user 5 → internal 4
+        assert_eq!(editor.frame_set.current_frame().left_margin, 4);
+        assert_eq!(editor.frame_set.current_frame().right_margin, 60);
+    }
+
+    #[test]
+    fn test_ep_lr_margins_set_initial() {
+        let (editor, outcome) = exec("hello\n", "EP'$M=(2,40)'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_frame().left_margin, 1);
+        assert_eq!(editor.frame_set.defaults.left_margin, 1);
+        assert_eq!(editor.frame_set.defaults.right_margin, 40);
+    }
+
+    // ── EP: TB margins ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ep_tb_margins() {
+        let (editor, outcome) = exec("hello\n", "EP'V=(2,3)'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_frame().margin_top, 2);
+        assert_eq!(editor.frame_set.current_frame().margin_bottom, 3);
+    }
+
+    // ── EP: tab stops ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ep_tab_default() {
+        let (mut editor, _) = exec("hello\n", "EP'T=W(4)'"); // set uniform 4
+        // Reset to default (every 8).
+        let code = compile("EP'T=D'").unwrap();
+        editor.execute(&code);
+        assert!(editor.frame_set.current_frame().tab_stops[8]);
+        assert!(editor.frame_set.current_frame().tab_stops[16]);
+        assert!(!editor.frame_set.current_frame().tab_stops[1]);
+    }
+
+    #[test]
+    fn test_ep_tab_uniform() {
+        let (editor, outcome) = exec("hello\n", "EP'T=W(4)'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Stops at 0, 4, 8, 12, ...
+        assert!(editor.frame_set.current_frame().tab_stops[0]);
+        assert!(editor.frame_set.current_frame().tab_stops[4]);
+        assert!(!editor.frame_set.current_frame().tab_stops[1]);
+        assert!(!editor.frame_set.current_frame().tab_stops[3]);
+    }
+
+    #[test]
+    fn test_ep_tab_explicit() {
+        let (editor, outcome) = exec("hello\n", "EP'T=(5,10)'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // User gave 1-based 5 and 10 → 0-based 4 and 9.
+        assert!(editor.frame_set.current_frame().tab_stops[4]);
+        assert!(editor.frame_set.current_frame().tab_stops[9]);
+        assert!(!editor.frame_set.current_frame().tab_stops[0]);
+        assert!(!editor.frame_set.current_frame().tab_stops[5]);
+    }
+
+    #[test]
+    fn test_ep_tab_set_at_dot() {
+        // Dot is at column 0 after J; set a tab stop there.
+        let (editor, outcome) = exec("hello\n", "EP'T=S'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Column 0 should already be a stop (default), so just confirm success.
+        assert!(editor.frame_set.current_frame().tab_stops[0]);
+    }
+
+    #[test]
+    fn test_ep_tab_clear_at_dot() {
+        // Default has stop at col 0; clear it.
+        let (editor, outcome) = exec("hello\n", "EP'T=C'");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert!(!editor.frame_set.current_frame().tab_stops[0]);
+    }
+
+    // ── EP: insert ruler (T=I) ────────────────────────────────────────────────
+
+    #[test]
+    fn test_ep_insert_ruler() {
+        // margins left=0, right=10; default tab stops at 0 and 8.
+        let (mut editor, _) = exec("content\n", "EP'M=(1,10)'");
+        let code = compile("EP'T=I'").unwrap();
+        editor.execute(&code);
+        let text = editor.to_string();
+        // Ruler line should be the first line (inserted before dot line).
+        let first_line = text.lines().next().unwrap();
+        assert_eq!(first_line.len(), 10);
+        // Position 0 = left margin = 'L' (overrides 'T').
+        assert_eq!(&first_line[0..1], "L");
+        // Position 9 = right_margin - 1 = 'R'.
+        assert_eq!(&first_line[9..10], "R");
+    }
+
+    // ── EP: syntax error ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ep_bad_syntax_fails() {
+        let (_, outcome) = exec("hello\n", "EP'Q=X'");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    // ── {}: margin bracket commands ───────────────────────────────────────────
+
+    #[test]
+    fn test_left_bracket_sets_left_margin() {
+        // Jump to column 5, then {.
+        let (editor, outcome) = exec("hello world\n", "5J{");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_frame().left_margin, 5);
+    }
+
+    #[test]
+    fn test_minus_left_bracket_resets_left_margin() {
+        // Set left margin to 5, then reset.
+        let (mut editor, _) = exec("hello world\n", "5J{");
+        let code = compile("-{").unwrap();
+        editor.execute(&code);
+        // Default left_margin is 0.
+        assert_eq!(editor.frame_set.current_frame().left_margin, 0);
+    }
+
+    #[test]
+    fn test_right_bracket_sets_right_margin() {
+        // Jump to column 39, then }. right_margin becomes 40 (col + 1).
+        let (editor, outcome) = exec("hello world this is a long line with more content!\n", "39J}");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(editor.frame_set.current_frame().right_margin, 40);
+    }
+
+    #[test]
+    fn test_minus_right_bracket_resets_right_margin() {
+        // Change right margin then reset.
+        let (mut editor, _) = exec("hello world this is a long line with more content!\n", "39J}");
+        let code = compile("-}").unwrap();
+        editor.execute(&code);
+        // Default right_margin is 79.
+        assert_eq!(editor.frame_set.current_frame().right_margin, 79);
+    }
+
+    #[test]
+    fn test_left_bracket_fails_if_at_or_past_right_margin() {
+        // Dot at col 79 (= right_margin) → { should fail.
+        let (mut editor, _) = exec("hello world\n", "");
+        editor.frame_set.current_frame_mut().left_margin = 0;
+        editor.frame_set.current_frame_mut().right_margin = 5;
+        // Jump dot to col 5 (= right_margin) — should fail
+        let code = compile("5J{").unwrap();
+        let outcome = editor.execute(&code);
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
 }

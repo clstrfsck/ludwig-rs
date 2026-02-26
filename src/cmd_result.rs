@@ -18,6 +18,12 @@ pub enum CmdFailure {
     SyntaxError,
     /// A frame with the given name already exists.
     FrameExists,
+    /// ED: a span with the target name already exists.
+    SpanOfThatNameExists,
+    /// EK: frame is the current frame, a special frame, or has files attached.
+    CantKillFrame,
+    /// ER: the return-frame chain is empty.
+    NoReturnFrame,
 }
 
 impl CmdResult {

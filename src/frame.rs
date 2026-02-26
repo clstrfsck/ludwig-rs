@@ -3,6 +3,7 @@
 mod edit;
 mod motion;
 mod predicate;
+pub(crate) mod params;
 mod search;
 mod word;
 
@@ -22,6 +23,31 @@ use crate::CompiledCode;
 use crate::marks::{MarkId, MarkSet};
 use crate::position::Position;
 
+/// Number of tab-stop slots (columns 0..=TAB_STOPS_LEN-1).
+pub const TAB_STOPS_LEN: usize = 401;
+
+/// Build the default tab-stop array: stops at every column where `col % 8 == 0`.
+pub fn default_tab_stops() -> Vec<bool> {
+    (0..TAB_STOPS_LEN).map(|i| i % 8 == 0).collect()
+}
+
+/// Options flags for a frame (EP `O=` sub-command).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FrameOptions {
+    pub auto_indent: bool,  // O=I
+    pub auto_wrap:   bool,  // O=W
+    pub newline:     bool,  // O=N
+}
+
+/// Keyboard mode (EP `K=` sub-command). Global to the session, not per-frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum KeyboardMode {
+    #[default]
+    Overtype,
+    Insert,
+    Command,
+}
+
 /// An editable text frame with support for virtual space and marks.
 #[derive(Debug)]
 pub struct Frame {
@@ -37,6 +63,16 @@ pub struct Frame {
     pub left_margin: usize,
     /// Right margin: maximum line length. Lines should be at most this many characters.
     pub right_margin: usize,
+    /// Frame to return to after ER (set by ED when switching to this frame).
+    pub return_frame_name: Option<String>,
+    /// Option flags (auto-indent, auto-wrap, newline).
+    pub options: FrameOptions,
+    /// Tab-stop bitmap, indexed by 0-based column (len = TAB_STOPS_LEN).
+    pub tab_stops: Vec<bool>,
+    /// Top scroll margin (rows from top of screen, default 0).
+    pub margin_top: usize,
+    /// Bottom scroll margin (rows from bottom of screen, default 0).
+    pub margin_bottom: usize,
 }
 
 impl Default for Frame {
@@ -53,7 +89,7 @@ impl fmt::Display for Frame {
 
 // Constructors
 impl Frame {
-    /// Create a new empty frame.
+    /// Create a new empty frame with default parameters.
     pub fn new(name: &str) -> Self {
         Self {
             name: name.into(),
@@ -62,6 +98,11 @@ impl Frame {
             code: None,
             left_margin: 0,
             right_margin: 79,
+            return_frame_name: None,
+            options: FrameOptions::default(),
+            tab_stops: default_tab_stops(),
+            margin_top: 0,
+            margin_bottom: 0,
         }
     }
 
@@ -78,6 +119,11 @@ impl Frame {
             code: None,
             left_margin: 0,
             right_margin: 79,
+            return_frame_name: None,
+            options: FrameOptions::default(),
+            tab_stops: default_tab_stops(),
+            margin_top: 0,
+            margin_bottom: 0,
         }
     }
 }
@@ -456,6 +502,16 @@ impl FrameRegistry {
     /// Test whether a frame exists.
     pub fn contains(&self, name: &str) -> bool {
         self.frames.contains_key(name)
+    }
+
+    /// Remove a frame by name, returning it if it existed.
+    pub fn remove(&mut self, name: &str) -> Option<Frame> {
+        self.frames.remove(name)
+    }
+
+    /// Return all frame names (for iteration, e.g. fixing return pointers).
+    pub fn names(&self) -> Vec<String> {
+        self.frames.keys().cloned().collect()
     }
 }
 

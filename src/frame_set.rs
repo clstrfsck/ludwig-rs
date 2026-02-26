@@ -1,13 +1,38 @@
 //! `FrameSet`: collection of named frames and the global span registry.
 
 use crate::MarkId;
-use crate::frame::{Frame, FrameRegistry};
+use crate::frame::{Frame, FrameOptions, FrameRegistry, KeyboardMode, default_tab_stops};
 use crate::span::{Span, SpanRegistry};
 
-const COMMAND_FRAME_NAME: &str = "COMMAND";
-const HEAP_FRAME_NAME: &str = "HEAP";
-const OOPS_FRAME_NAME: &str = "OOPS";
-const SPECIAL_FRAME_NAMES: &[&str] = &[COMMAND_FRAME_NAME, HEAP_FRAME_NAME, OOPS_FRAME_NAME];
+pub const COMMAND_FRAME_NAME: &str = "COMMAND";
+pub const HEAP_FRAME_NAME: &str = "HEAP";
+pub const OOPS_FRAME_NAME: &str = "OOPS";
+pub const SPECIAL_FRAME_NAMES: &[&str] = &[COMMAND_FRAME_NAME, HEAP_FRAME_NAME, OOPS_FRAME_NAME];
+
+/// Default parameters applied to newly-created frames.
+/// Updated by EP with the `$` prefix.
+#[derive(Debug, Clone)]
+pub struct FrameDefaults {
+    pub left_margin:   usize,
+    pub right_margin:  usize,
+    pub margin_top:    usize,
+    pub margin_bottom: usize,
+    pub tab_stops:     Vec<bool>,
+    pub options:       FrameOptions,
+}
+
+impl Default for FrameDefaults {
+    fn default() -> Self {
+        Self {
+            left_margin:   0,
+            right_margin:  79,
+            margin_top:    0,
+            margin_bottom: 0,
+            tab_stops:     default_tab_stops(),
+            options:       FrameOptions::default(),
+        }
+    }
+}
 
 /// A collection of named [`Frame`]s plus the global [`SpanRegistry`].
 pub struct FrameSet {
@@ -17,6 +42,10 @@ pub struct FrameSet {
     spans: SpanRegistry,
     current_name: String,
     next_bound_id: u32,
+    /// Default parameters for newly-created frames (EP `$` prefix).
+    pub defaults: FrameDefaults,
+    /// Global keyboard mode (EP `K=`).
+    pub keyboard_mode: KeyboardMode,
 }
 
 impl FrameSet {
@@ -34,7 +63,41 @@ impl FrameSet {
             spans: SpanRegistry::new(),
             current_name: main_name,
             next_bound_id: 0,
+            defaults: FrameDefaults::default(),
+            keyboard_mode: KeyboardMode::default(),
         }
+    }
+
+    /// Create a new frame whose parameters are initialised from `defaults`.
+    pub fn create_frame_from_defaults(&self, name: &str) -> Frame {
+        let mut f = Frame::new(name);
+        f.left_margin   = self.defaults.left_margin;
+        f.right_margin  = self.defaults.right_margin;
+        f.margin_top    = self.defaults.margin_top;
+        f.margin_bottom = self.defaults.margin_bottom;
+        f.tab_stops     = self.defaults.tab_stops.clone();
+        f.options       = self.defaults.options.clone();
+        f
+    }
+
+    /// Set the current frame name directly (used by ED/ER).
+    pub fn set_current_name(&mut self, name: String) {
+        self.current_name = name;
+    }
+
+    /// Insert a frame by name (name is normalised to UPPERCASE).
+    pub fn insert_frame(&mut self, name: &str, frame: Frame) {
+        self.frames.insert(normalise(name), frame);
+    }
+
+    /// Remove a frame by name. Returns the removed frame if it existed.
+    pub fn remove_frame(&mut self, name: &str) -> Option<Frame> {
+        self.frames.remove(&normalise(name))
+    }
+
+    /// Return all frame names (for iterating to fix return pointers in EK).
+    pub fn frame_names(&self) -> Vec<String> {
+        self.frames.names()
     }
 
     /// Name of the current frame.
