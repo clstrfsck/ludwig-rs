@@ -28,7 +28,6 @@ pub mod cell_buffer;
 mod cmd_result;
 pub mod code;
 pub mod compiler;
-mod editor;
 mod exec_context;
 pub(crate) mod file_io;
 mod frame;
@@ -48,7 +47,6 @@ pub mod viewport;
 pub use cmd_result::{CmdFailure, CmdResult};
 pub use code::{CompiledCode, ExecOutcome};
 pub use compiler::compile;
-pub use editor::Editor;
 pub use frame::{
     CaseMode, EditCommands, Frame, MotionCommands, PredicateCommands, SearchCommands, WordCommands,
 };

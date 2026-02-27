@@ -6,9 +6,7 @@
 
 use crate::file_io;
 use crate::frame::Frame;
-use crate::frame::params::{
-    EpDirective, EpKeyboardMode, EpOptionFlag, EpTabOp, parse_ep,
-};
+use crate::frame::params::{EpDirective, EpKeyboardMode, EpOptionFlag, EpTabOp, parse_ep};
 use crate::frame::{KeyboardMode, default_tab_stops};
 use crate::frame_set::{FrameSet, SPECIAL_FRAME_NAMES};
 use crate::marks::NUMBERED_MARK_RANGE;
@@ -433,7 +431,11 @@ impl<'a> ExecutionContext<'a> {
         }
 
         let raw = tpars[0].content.trim().to_uppercase();
-        let target_name = if raw.is_empty() { "LUDWIG".to_string() } else { raw };
+        let target_name = if raw.is_empty() {
+            "LUDWIG".to_string()
+        } else {
+            raw
+        };
 
         // Fail if a span (not a frame) has this name.
         if self.frame_set.contains_span(&target_name) {
@@ -516,16 +518,16 @@ impl<'a> ExecutionContext<'a> {
             if name == &raw {
                 continue;
             }
-            if let Some(f) = self.frame_set.get_frame_mut(name) &&
-                f.return_frame_name.as_deref() == Some(&raw)
+            if let Some(f) = self.frame_set.get_frame_mut(name)
+                && f.return_frame_name.as_deref() == Some(&raw)
             {
                 f.return_frame_name = None;
             }
         }
 
         // Remove the frame itself, cleaning up any temp output file.
-        if let Some(frame) = self.frame_set.remove_frame(&raw) &&
-            let Some(ref fh) = frame.output_file
+        if let Some(frame) = self.frame_set.remove_frame(&raw)
+            && let Some(ref fh) = frame.output_file
         {
             file_io::delete_temp(fh);
         }
@@ -564,12 +566,18 @@ impl<'a> ExecutionContext<'a> {
             return CmdResult::Success; // display mode — no-op in batch
         }
 
-        let current_left   = self.frame_set.current_frame().left_margin;
-        let current_right  = self.frame_set.current_frame().right_margin;
-        let current_top    = self.frame_set.current_frame().margin_top;
+        let current_left = self.frame_set.current_frame().left_margin;
+        let current_right = self.frame_set.current_frame().right_margin;
+        let current_top = self.frame_set.current_frame().margin_top;
         let current_bottom = self.frame_set.current_frame().margin_bottom;
 
-        let directives = match parse_ep(&raw, current_left, current_right, current_top, current_bottom) {
+        let directives = match parse_ep(
+            &raw,
+            current_left,
+            current_right,
+            current_top,
+            current_bottom,
+        ) {
             Ok(d) => d,
             Err(()) => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
@@ -590,9 +598,9 @@ impl<'a> ExecutionContext<'a> {
         match dir {
             EpDirective::KeyboardMode { mode, .. } => {
                 self.frame_set.keyboard_mode = match mode {
-                    EpKeyboardMode::Insert   => KeyboardMode::Insert,
+                    EpKeyboardMode::Insert => KeyboardMode::Insert,
                     EpKeyboardMode::Overtype => KeyboardMode::Overtype,
-                    EpKeyboardMode::Command  => KeyboardMode::Command,
+                    EpKeyboardMode::Command => KeyboardMode::Command,
                 };
             }
 
@@ -602,39 +610,59 @@ impl<'a> ExecutionContext<'a> {
                     match op.flag {
                         EpOptionFlag::AutoIndent => {
                             self.frame_set.current_frame_mut().options.auto_indent = set;
-                            if set_initial { self.frame_set.defaults.options.auto_indent = set; }
+                            if set_initial {
+                                self.frame_set.defaults.options.auto_indent = set;
+                            }
                         }
                         EpOptionFlag::AutoWrap => {
                             self.frame_set.current_frame_mut().options.auto_wrap = set;
-                            if set_initial { self.frame_set.defaults.options.auto_wrap = set; }
+                            if set_initial {
+                                self.frame_set.defaults.options.auto_wrap = set;
+                            }
                         }
                         EpOptionFlag::Newline => {
                             self.frame_set.current_frame_mut().options.newline = set;
-                            if set_initial { self.frame_set.defaults.options.newline = set; }
+                            if set_initial {
+                                self.frame_set.defaults.options.newline = set;
+                            }
                         }
                         EpOptionFlag::Show => {} // display only — no-op in batch
                     }
                 }
             }
 
-            EpDirective::LrMargins { mut left_margin, mut right_margin, set_initial } => {
+            EpDirective::LrMargins {
+                mut left_margin,
+                mut right_margin,
+                set_initial,
+            } => {
                 // Resolve '.' sentinel (value 0 means use dot column).
-                if left_margin == 0  { left_margin  = dot_col; }
-                if right_margin == 0 { right_margin = dot_col + 1; }
-                if left_margin >= right_margin { return Err(()); }
-                self.frame_set.current_frame_mut().left_margin  = left_margin;
+                if left_margin == 0 {
+                    left_margin = dot_col;
+                }
+                if right_margin == 0 {
+                    right_margin = dot_col + 1;
+                }
+                if left_margin >= right_margin {
+                    return Err(());
+                }
+                self.frame_set.current_frame_mut().left_margin = left_margin;
                 self.frame_set.current_frame_mut().right_margin = right_margin;
                 if set_initial {
-                    self.frame_set.defaults.left_margin  = left_margin;
+                    self.frame_set.defaults.left_margin = left_margin;
                     self.frame_set.defaults.right_margin = right_margin;
                 }
             }
 
-            EpDirective::TbMargins { margin_top, margin_bottom, set_initial } => {
-                self.frame_set.current_frame_mut().margin_top    = margin_top;
+            EpDirective::TbMargins {
+                margin_top,
+                margin_bottom,
+                set_initial,
+            } => {
+                self.frame_set.current_frame_mut().margin_top = margin_top;
                 self.frame_set.current_frame_mut().margin_bottom = margin_bottom;
                 if set_initial {
-                    self.frame_set.defaults.margin_top    = margin_top;
+                    self.frame_set.defaults.margin_top = margin_top;
                     self.frame_set.defaults.margin_bottom = margin_bottom;
                 }
             }
@@ -644,8 +672,8 @@ impl<'a> ExecutionContext<'a> {
             }
 
             EpDirective::ScreenHeight { .. }
-            | EpDirective::ScreenWidth  { .. }
-            | EpDirective::SpaceLimit   { .. }
+            | EpDirective::ScreenWidth { .. }
+            | EpDirective::SpaceLimit { .. }
             | EpDirective::CmdIntroducer => {
                 // Stored / no-op in this implementation.
             }
@@ -659,7 +687,9 @@ impl<'a> ExecutionContext<'a> {
             EpTabOp::Default => {
                 let stops = default_tab_stops();
                 self.frame_set.current_frame_mut().tab_stops = stops.clone();
-                if set_initial { self.frame_set.defaults.tab_stops = stops; }
+                if set_initial {
+                    self.frame_set.defaults.tab_stops = stops;
+                }
             }
 
             EpTabOp::SetAtDot => {
@@ -681,18 +711,26 @@ impl<'a> ExecutionContext<'a> {
             }
 
             EpTabOp::Uniform { n } => {
-                let stops: Vec<bool> = (0..crate::frame::TAB_STOPS_LEN).map(|i| i % n == 0).collect();
+                let stops: Vec<bool> = (0..crate::frame::TAB_STOPS_LEN)
+                    .map(|i| i % n == 0)
+                    .collect();
                 self.frame_set.current_frame_mut().tab_stops = stops.clone();
-                if set_initial { self.frame_set.defaults.tab_stops = stops; }
+                if set_initial {
+                    self.frame_set.defaults.tab_stops = stops;
+                }
             }
 
             EpTabOp::Explicit { cols } => {
                 let mut stops = vec![false; crate::frame::TAB_STOPS_LEN];
                 for col in cols {
-                    if col < stops.len() { stops[col] = true; }
+                    if col < stops.len() {
+                        stops[col] = true;
+                    }
                 }
                 self.frame_set.current_frame_mut().tab_stops = stops.clone();
-                if set_initial { self.frame_set.defaults.tab_stops = stops; }
+                if set_initial {
+                    self.frame_set.defaults.tab_stops = stops;
+                }
             }
 
             EpTabOp::Template => {
@@ -712,13 +750,15 @@ impl<'a> ExecutionContext<'a> {
                     }
                 }
                 self.frame_set.current_frame_mut().tab_stops = stops.clone();
-                if set_initial { self.frame_set.defaults.tab_stops = stops; }
+                if set_initial {
+                    self.frame_set.defaults.tab_stops = stops;
+                }
             }
 
             EpTabOp::InsertRuler => {
-                let left_m  = self.frame_set.current_frame().left_margin;
+                let left_m = self.frame_set.current_frame().left_margin;
                 let right_m = self.frame_set.current_frame().right_margin;
-                let stops   = self.frame_set.current_frame().tab_stops.clone();
+                let stops = self.frame_set.current_frame().tab_stops.clone();
                 let dot_line = self.frame_set.current_frame().dot().line;
 
                 // Build ruler string of length `right_m`.
@@ -728,12 +768,18 @@ impl<'a> ExecutionContext<'a> {
                         ruler[i] = 'T';
                     }
                 }
-                if left_m < right_m  { ruler[left_m]      = 'L'; }
-                if right_m > 0       { ruler[right_m - 1] = 'R'; }
+                if left_m < right_m {
+                    ruler[left_m] = 'L';
+                }
+                if right_m > 0 {
+                    ruler[right_m - 1] = 'R';
+                }
 
                 let ruler_str: String = ruler.into_iter().collect();
                 let insert_pos = Position::new(dot_line, 0);
-                self.frame_set.current_frame_mut().insert_at(insert_pos, &(ruler_str + "\n"));
+                self.frame_set
+                    .current_frame_mut()
+                    .insert_at(insert_pos, &(ruler_str + "\n"));
             }
 
             EpTabOp::ReadRuler => {
@@ -741,7 +787,8 @@ impl<'a> ExecutionContext<'a> {
                 let line_chars: Vec<char> = {
                     match self.frame_set.current_frame().line_content(dot_line) {
                         None => return Err(()),
-                        Some(s) => s.chars()
+                        Some(s) => s
+                            .chars()
                             .map(|c| c.to_ascii_uppercase())
                             .filter(|&c| c != '\n' && c != '\r')
                             .collect(),
@@ -749,47 +796,58 @@ impl<'a> ExecutionContext<'a> {
                 };
 
                 // Validate: only T, L, R, space; exactly one L before one R.
-                let mut left_pos:  Option<usize> = None;
+                let mut left_pos: Option<usize> = None;
                 let mut right_pos: Option<usize> = None;
                 for (i, &ch) in line_chars.iter().enumerate() {
                     match ch {
                         'L' => {
-                            if left_pos.is_some() || right_pos.is_some() { return Err(()); }
+                            if left_pos.is_some() || right_pos.is_some() {
+                                return Err(());
+                            }
                             left_pos = Some(i);
                         }
                         'R' => {
-                            if left_pos.is_none() || right_pos.is_some() { return Err(()); }
+                            if left_pos.is_none() || right_pos.is_some() {
+                                return Err(());
+                            }
                             right_pos = Some(i);
                         }
                         'T' | ' ' => {}
                         _ => return Err(()),
                     }
                 }
-                let left_col  = match left_pos  { Some(p) => p,     None => return Err(()) };
-                let right_col = match right_pos { Some(p) => p + 1, None => return Err(()) };
+                let left_col = match left_pos {
+                    Some(p) => p,
+                    None => return Err(()),
+                };
+                let right_col = match right_pos {
+                    Some(p) => p + 1,
+                    None => return Err(()),
+                };
 
                 // Extract tab stops.
                 let mut stops = vec![false; crate::frame::TAB_STOPS_LEN];
                 for (i, &ch) in line_chars.iter().enumerate() {
-                    if ch == 'T' && i < stops.len() { stops[i] = true; }
+                    if ch == 'T' && i < stops.len() {
+                        stops[i] = true;
+                    }
                 }
 
                 // Delete the ruler line.
                 let line_count = self.frame_set.current_frame().line_count();
                 let next_line = (dot_line + 1).min(line_count);
-                self.frame_set.current_frame_mut().delete(
-                    Position::new(dot_line, 0),
-                    Position::new(next_line, 0),
-                );
+                self.frame_set
+                    .current_frame_mut()
+                    .delete(Position::new(dot_line, 0), Position::new(next_line, 0));
 
                 // Apply.
-                self.frame_set.current_frame_mut().left_margin  = left_col;
+                self.frame_set.current_frame_mut().left_margin = left_col;
                 self.frame_set.current_frame_mut().right_margin = right_col;
-                self.frame_set.current_frame_mut().tab_stops    = stops.clone();
+                self.frame_set.current_frame_mut().tab_stops = stops.clone();
                 if set_initial {
-                    self.frame_set.defaults.left_margin  = left_col;
+                    self.frame_set.defaults.left_margin = left_col;
                     self.frame_set.defaults.right_margin = right_col;
-                    self.frame_set.defaults.tab_stops    = stops;
+                    self.frame_set.defaults.tab_stops = stops;
                 }
             }
         }
@@ -895,9 +953,18 @@ impl<'a> ExecutionContext<'a> {
 
                 // Collect frame content and modified flag before taking the handle.
                 let text = self.frame_set.current_frame().text();
-                let modified = self.frame_set.current_frame().get_mark(MarkId::Modified).is_some();
+                let modified = self
+                    .frame_set
+                    .current_frame()
+                    .get_mark(MarkId::Modified)
+                    .is_some();
 
-                let mut fh = self.frame_set.current_frame_mut().output_file.take().unwrap();
+                let mut fh = self
+                    .frame_set
+                    .current_frame_mut()
+                    .output_file
+                    .take()
+                    .unwrap();
 
                 if file_io::write_all(&mut fh, &text).is_err() {
                     return CmdResult::Failure(CmdFailure::FileOpenError);
@@ -953,8 +1020,17 @@ impl<'a> ExecutionContext<'a> {
                 // Finalize output if open.
                 if has_output {
                     let text = self.frame_set.current_frame().text();
-                    let modified = self.frame_set.current_frame().get_mark(MarkId::Modified).is_some();
-                    let mut fh = self.frame_set.current_frame_mut().output_file.take().unwrap();
+                    let modified = self
+                        .frame_set
+                        .current_frame()
+                        .get_mark(MarkId::Modified)
+                        .is_some();
+                    let mut fh = self
+                        .frame_set
+                        .current_frame_mut()
+                        .output_file
+                        .take()
+                        .unwrap();
 
                     if file_io::write_all(&mut fh, &text).is_err() {
                         return CmdResult::Failure(CmdFailure::FileOpenError);
@@ -1021,7 +1097,12 @@ impl<'a> ExecutionContext<'a> {
             return CmdResult::Failure(CmdFailure::FileNotOpen);
         }
 
-        let fh = self.frame_set.current_frame_mut().output_file.take().unwrap();
+        let fh = self
+            .frame_set
+            .current_frame_mut()
+            .output_file
+            .take()
+            .unwrap();
         file_io::delete_temp(&fh);
 
         CmdResult::Success
@@ -1040,7 +1121,12 @@ impl<'a> ExecutionContext<'a> {
         }
 
         // Take the handle out to allow mutable access to the frame simultaneously.
-        let mut fh = self.frame_set.current_frame_mut().input_file.take().unwrap();
+        let mut fh = self
+            .frame_set
+            .current_frame_mut()
+            .input_file
+            .take()
+            .unwrap();
 
         if file_io::rewind(&mut fh).is_err() {
             // Put it back on error so the caller can still clean up.
@@ -1075,13 +1161,23 @@ impl<'a> ExecutionContext<'a> {
         }
 
         // No-op if not modified.
-        if self.frame_set.current_frame().get_mark(MarkId::Modified).is_none() {
+        if self
+            .frame_set
+            .current_frame()
+            .get_mark(MarkId::Modified)
+            .is_none()
+        {
             return CmdResult::Success;
         }
 
         // Collect frame text, then take the output handle.
         let text = self.frame_set.current_frame().text();
-        let mut out = self.frame_set.current_frame_mut().output_file.take().unwrap();
+        let mut out = self
+            .frame_set
+            .current_frame_mut()
+            .output_file
+            .take()
+            .unwrap();
 
         if file_io::write_all(&mut out, &text).is_err() {
             return CmdResult::Failure(CmdFailure::FileOpenError);
@@ -1166,7 +1262,11 @@ impl<'a> ExecutionContext<'a> {
     ///
     /// `FGO/path/` — open global output file.
     /// `-FGO//`    — flush, finalize, close global output file.
-    pub(crate) fn cmd_fglobal_output(&mut self, lead: LeadParam, tpars: &[TrailParam]) -> CmdResult {
+    pub(crate) fn cmd_fglobal_output(
+        &mut self,
+        lead: LeadParam,
+        tpars: &[TrailParam],
+    ) -> CmdResult {
         match lead {
             LeadParam::Minus => {
                 if self.frame_set.global_output.is_none() {
@@ -1234,11 +1334,15 @@ impl<'a> ExecutionContext<'a> {
         let text: String = lines.iter().map(|l| format!("{}\n", l)).collect();
 
         let dot = self.frame_set.current_frame().dot();
-        self.frame_set.current_frame_mut().set_mark_at(MarkId::Equals, dot);
+        self.frame_set
+            .current_frame_mut()
+            .set_mark_at(MarkId::Equals, dot);
         self.frame_set.current_frame_mut().insert_at(dot, &text);
 
         let new_dot = self.frame_set.current_frame().dot();
-        self.frame_set.current_frame_mut().set_mark_at(MarkId::Modified, new_dot);
+        self.frame_set
+            .current_frame_mut()
+            .set_mark_at(MarkId::Modified, new_dot);
 
         CmdResult::Success
     }
@@ -1278,9 +1382,7 @@ impl<'a> ExecutionContext<'a> {
                 .line_content(line_idx)
                 .map(|s| {
                     let s = s.to_string();
-                    s.trim_end_matches('\n')
-                        .trim_end_matches('\r')
-                        .to_string()
+                    s.trim_end_matches('\n').trim_end_matches('\r').to_string()
                 })
                 .unwrap_or_default();
             lines.push(content);

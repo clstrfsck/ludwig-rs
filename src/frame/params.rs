@@ -10,13 +10,27 @@ pub const MAX_COL: usize = 400;
 #[derive(Debug, PartialEq, Eq)]
 pub enum EpDirective {
     /// `K=I|O|C` — set keyboard mode
-    KeyboardMode { mode: EpKeyboardMode, set_initial: bool },
+    KeyboardMode {
+        mode: EpKeyboardMode,
+        set_initial: bool,
+    },
     /// `O=...` — set/clear option flags
-    Options { ops: Vec<EpOptionOp>, set_initial: bool },
+    Options {
+        ops: Vec<EpOptionOp>,
+        set_initial: bool,
+    },
     /// `M=(left,right)` — horizontal margins (0-based Rust values after conversion)
-    LrMargins { left_margin: usize, right_margin: usize, set_initial: bool },
+    LrMargins {
+        left_margin: usize,
+        right_margin: usize,
+        set_initial: bool,
+    },
     /// `V=(top,bottom)` — vertical scroll margins
-    TbMargins { margin_top: usize, margin_bottom: usize, set_initial: bool },
+    TbMargins {
+        margin_top: usize,
+        margin_bottom: usize,
+        set_initial: bool,
+    },
     /// `T=...` — tab stop operation
     Tabs { op: EpTabOp, set_initial: bool },
     /// `H=n` — screen height (stored but not yet used by viewport)
@@ -40,15 +54,15 @@ pub enum EpKeyboardMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EpOptionOp {
     pub flag: EpOptionFlag,
-    pub set: bool,  // true = set, false = clear
+    pub set: bool, // true = set, false = clear
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EpOptionFlag {
-    AutoIndent,  // I
-    AutoWrap,    // W
-    Newline,     // N
-    Show,        // S — display current options (no-op in batch)
+    AutoIndent, // I
+    AutoWrap,   // W
+    Newline,    // N
+    Show,       // S — display current options (no-op in batch)
 }
 
 /// A tab-stop operation.
@@ -82,7 +96,10 @@ struct Parser {
 impl Parser {
     fn new(s: &str) -> Self {
         // Normalise to uppercase for case-insensitive matching.
-        Self { chars: s.chars().map(|c| c.to_ascii_uppercase()).collect(), pos: 0 }
+        Self {
+            chars: s.chars().map(|c| c.to_ascii_uppercase()).collect(),
+            pos: 0,
+        }
     }
 
     /// Peek at the current character without advancing (returns '\0' at end).
@@ -101,7 +118,11 @@ impl Parser {
 
     /// Require the next character to equal `expected`.
     fn expect(&mut self, expected: char) -> Result<(), ()> {
-        if self.next() == expected { Ok(()) } else { Err(()) }
+        if self.next() == expected {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     /// Parse a run of ASCII digits as a `usize`.  Fails if no digits found.
@@ -110,7 +131,9 @@ impl Parser {
         while self.peek().is_ascii_digit() {
             s.push(self.next());
         }
-        if s.is_empty() { return Err(()); }
+        if s.is_empty() {
+            return Err(());
+        }
         s.parse::<usize>().map_err(|_| ())
     }
 
@@ -148,7 +171,12 @@ pub fn parse_ep(
 
     loop {
         // Optional '$' prefix = set initial defaults too.
-        let set_initial = if p.peek() == '$' { p.next(); true } else { false };
+        let set_initial = if p.peek() == '$' {
+            p.next();
+            true
+        } else {
+            false
+        };
 
         // Key letter.
         let key = p.next();
@@ -167,12 +195,16 @@ pub fn parse_ep(
             'T' => parse_tabs(&mut p, set_initial)?,
             'H' => {
                 let n = p.parse_uint()?;
-                if n == 0 { return Err(()); }
+                if n == 0 {
+                    return Err(());
+                }
                 EpDirective::ScreenHeight { n, set_initial }
             }
             'W' => {
                 let n = p.parse_uint()?;
-                if n < 10 { return Err(()); }
+                if n < 10 {
+                    return Err(());
+                }
                 EpDirective::ScreenWidth { n, set_initial }
             }
             'S' => {
@@ -192,7 +224,9 @@ pub fn parse_ep(
 
         match p.peek() {
             '\0' => break,
-            ',' => { p.next(); }
+            ',' => {
+                p.next();
+            }
             _ => return Err(()),
         }
     }
@@ -217,7 +251,12 @@ fn parse_options(p: &mut Parser, set_initial: bool) -> Result<EpDirective, ()> {
     if p.peek() == '(' {
         p.next(); // consume '('
         loop {
-            let set = if p.peek() == '-' { p.next(); false } else { true };
+            let set = if p.peek() == '-' {
+                p.next();
+                false
+            } else {
+                true
+            };
             let flag = parse_option_flag(p.next())?;
             ops.push(EpOptionOp { flag, set });
             match p.next() {
@@ -228,7 +267,12 @@ fn parse_options(p: &mut Parser, set_initial: bool) -> Result<EpDirective, ()> {
         }
     } else {
         // Single option (toggle: set=true to set the flag; use explicit '-' form to clear).
-        let set = if p.peek() == '-' { p.next(); false } else { true };
+        let set = if p.peek() == '-' {
+            p.next();
+            false
+        } else {
+            true
+        };
         let flag = parse_option_flag(p.next())?;
         ops.push(EpOptionOp { flag, set });
     }
@@ -256,8 +300,8 @@ fn parse_lr_margins(
 
     // Current values (keep if the user omits a side).
     // current_left is 0-based; for the parser we work in 1-based user values.
-    let mut left_user = current_left + 1;   // convert 0-based → 1-based
-    let mut right_user = current_right;     // right_margin is already the width value
+    let mut left_user = current_left + 1; // convert 0-based → 1-based
+    let mut right_user = current_right; // right_margin is already the width value
 
     let ch = p.peek();
     if ch == '.' {
@@ -267,7 +311,9 @@ fn parse_lr_margins(
         left_user = 0; // sentinel: use dot.column + 1
     } else if let Some(n) = p.try_parse_uint()? {
         // 1-based; 0 is not valid (use '.' for dot column).
-        if !(1..=MAX_COL).contains(&n) { return Err(()); }
+        if !(1..=MAX_COL).contains(&n) {
+            return Err(());
+        }
         left_user = n;
     }
 
@@ -278,7 +324,9 @@ fn parse_lr_margins(
             p.next();
             right_user = 0; // sentinel: use dot.column + 1
         } else if let Some(n) = p.try_parse_uint()? {
-            if !(1..=MAX_COL).contains(&n) { return Err(()); }
+            if !(1..=MAX_COL).contains(&n) {
+                return Err(());
+            }
             right_user = n;
         }
     }
@@ -296,7 +344,11 @@ fn parse_lr_margins(
         return Err(());
     }
 
-    Ok(EpDirective::LrMargins { left_margin, right_margin, set_initial })
+    Ok(EpDirective::LrMargins {
+        left_margin,
+        right_margin,
+        set_initial,
+    })
 }
 
 fn parse_tb_margins(
@@ -322,7 +374,11 @@ fn parse_tb_margins(
 
     p.expect(')')?;
 
-    Ok(EpDirective::TbMargins { margin_top: top, margin_bottom: bottom, set_initial })
+    Ok(EpDirective::TbMargins {
+        margin_top: top,
+        margin_bottom: bottom,
+        set_initial,
+    })
 }
 
 fn parse_tabs(p: &mut Parser, set_initial: bool) -> Result<EpDirective, ()> {
@@ -337,7 +393,9 @@ fn parse_tabs(p: &mut Parser, set_initial: bool) -> Result<EpDirective, ()> {
         'W' => {
             p.expect('(')?;
             let n = p.parse_uint()?;
-            if n == 0 || n > MAX_COL { return Err(()); }
+            if n == 0 || n > MAX_COL {
+                return Err(());
+            }
             p.expect(')')?;
             EpTabOp::Uniform { n }
         }
@@ -346,8 +404,10 @@ fn parse_tabs(p: &mut Parser, set_initial: bool) -> Result<EpDirective, ()> {
             let mut cols = Vec::new();
             loop {
                 let col_1based = p.parse_uint()?;
-                if !(1..=MAX_COL).contains(&col_1based) { return Err(()); }
-                cols.push(col_1based - 1);  // convert to 0-based
+                if !(1..=MAX_COL).contains(&col_1based) {
+                    return Err(());
+                }
+                cols.push(col_1based - 1); // convert to 0-based
                 match p.next() {
                     ')' => break,
                     ',' => continue,
@@ -375,7 +435,10 @@ mod tests {
     fn test_keyboard_mode_insert() {
         assert_eq!(
             parse("K=I").unwrap(),
-            vec![EpDirective::KeyboardMode { mode: EpKeyboardMode::Insert, set_initial: false }]
+            vec![EpDirective::KeyboardMode {
+                mode: EpKeyboardMode::Insert,
+                set_initial: false
+            }]
         );
     }
 
@@ -383,7 +446,10 @@ mod tests {
     fn test_keyboard_mode_overtype() {
         assert_eq!(
             parse("K=O").unwrap(),
-            vec![EpDirective::KeyboardMode { mode: EpKeyboardMode::Overtype, set_initial: false }]
+            vec![EpDirective::KeyboardMode {
+                mode: EpKeyboardMode::Overtype,
+                set_initial: false
+            }]
         );
     }
 
@@ -391,71 +457,110 @@ mod tests {
     fn test_keyboard_mode_command() {
         assert_eq!(
             parse("K=C").unwrap(),
-            vec![EpDirective::KeyboardMode { mode: EpKeyboardMode::Command, set_initial: false }]
+            vec![EpDirective::KeyboardMode {
+                mode: EpKeyboardMode::Command,
+                set_initial: false
+            }]
         );
     }
 
     #[test]
     fn test_option_single_set() {
         let dirs = parse("O=I").unwrap();
-        assert_eq!(dirs, vec![EpDirective::Options {
-            ops: vec![EpOptionOp { flag: EpOptionFlag::AutoIndent, set: true }],
-            set_initial: false,
-        }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::Options {
+                ops: vec![EpOptionOp {
+                    flag: EpOptionFlag::AutoIndent,
+                    set: true
+                }],
+                set_initial: false,
+            }]
+        );
     }
 
     #[test]
     fn test_option_single_clear() {
         let dirs = parse("O=-I").unwrap();
-        assert_eq!(dirs, vec![EpDirective::Options {
-            ops: vec![EpOptionOp { flag: EpOptionFlag::AutoIndent, set: false }],
-            set_initial: false,
-        }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::Options {
+                ops: vec![EpOptionOp {
+                    flag: EpOptionFlag::AutoIndent,
+                    set: false
+                }],
+                set_initial: false,
+            }]
+        );
     }
 
     #[test]
     fn test_option_parens_multiple() {
         let dirs = parse("O=(I,W)").unwrap();
-        assert_eq!(dirs, vec![EpDirective::Options {
-            ops: vec![
-                EpOptionOp { flag: EpOptionFlag::AutoIndent, set: true },
-                EpOptionOp { flag: EpOptionFlag::AutoWrap,   set: true },
-            ],
-            set_initial: false,
-        }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::Options {
+                ops: vec![
+                    EpOptionOp {
+                        flag: EpOptionFlag::AutoIndent,
+                        set: true
+                    },
+                    EpOptionOp {
+                        flag: EpOptionFlag::AutoWrap,
+                        set: true
+                    },
+                ],
+                set_initial: false,
+            }]
+        );
     }
 
     #[test]
     fn test_option_parens_clear_one() {
         let dirs = parse("O=(-I,W)").unwrap();
-        assert_eq!(dirs, vec![EpDirective::Options {
-            ops: vec![
-                EpOptionOp { flag: EpOptionFlag::AutoIndent, set: false },
-                EpOptionOp { flag: EpOptionFlag::AutoWrap,   set: true },
-            ],
-            set_initial: false,
-        }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::Options {
+                ops: vec![
+                    EpOptionOp {
+                        flag: EpOptionFlag::AutoIndent,
+                        set: false
+                    },
+                    EpOptionOp {
+                        flag: EpOptionFlag::AutoWrap,
+                        set: true
+                    },
+                ],
+                set_initial: false,
+            }]
+        );
     }
 
     #[test]
     fn test_lr_margins() {
         let dirs = parse("M=(5,75)").unwrap();
-        assert_eq!(dirs, vec![EpDirective::LrMargins {
-            left_margin: 4,   // 5-1 = 4 (0-based)
-            right_margin: 75,
-            set_initial: false,
-        }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::LrMargins {
+                left_margin: 4, // 5-1 = 4 (0-based)
+                right_margin: 75,
+                set_initial: false,
+            }]
+        );
     }
 
     #[test]
     fn test_lr_margins_default_values() {
         // M=(1,79) → left_margin=0, right_margin=79
         let dirs = parse("M=(1,79)").unwrap();
-        assert_eq!(dirs, vec![EpDirective::LrMargins {
-            left_margin: 0,
-            right_margin: 79,
-            set_initial: false,
-        }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::LrMargins {
+                left_margin: 0,
+                right_margin: 79,
+                set_initial: false,
+            }]
+        );
     }
 
     #[test]
@@ -465,65 +570,116 @@ mod tests {
 
     #[test]
     fn test_lr_margins_fails_out_of_range() {
-        assert!(parse("M=(0,79)").is_err());  // 0 is below 1 (1-based)
+        assert!(parse("M=(0,79)").is_err()); // 0 is below 1 (1-based)
     }
 
     #[test]
     fn test_tb_margins() {
         let dirs = parse("V=(2,3)").unwrap();
-        assert_eq!(dirs, vec![EpDirective::TbMargins {
-            margin_top: 2, margin_bottom: 3, set_initial: false,
-        }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::TbMargins {
+                margin_top: 2,
+                margin_bottom: 3,
+                set_initial: false,
+            }]
+        );
     }
 
     #[test]
     fn test_tab_default() {
         let dirs = parse("T=D").unwrap();
-        assert_eq!(dirs, vec![EpDirective::Tabs { op: EpTabOp::Default, set_initial: false }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::Tabs {
+                op: EpTabOp::Default,
+                set_initial: false
+            }]
+        );
     }
 
     #[test]
     fn test_tab_set_at_dot() {
         let dirs = parse("T=S").unwrap();
-        assert_eq!(dirs, vec![EpDirective::Tabs { op: EpTabOp::SetAtDot, set_initial: false }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::Tabs {
+                op: EpTabOp::SetAtDot,
+                set_initial: false
+            }]
+        );
     }
 
     #[test]
     fn test_tab_clear_at_dot() {
         let dirs = parse("T=C").unwrap();
-        assert_eq!(dirs, vec![EpDirective::Tabs { op: EpTabOp::ClearAtDot, set_initial: false }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::Tabs {
+                op: EpTabOp::ClearAtDot,
+                set_initial: false
+            }]
+        );
     }
 
     #[test]
     fn test_tab_uniform() {
         let dirs = parse("T=W(4)").unwrap();
-        assert_eq!(dirs, vec![EpDirective::Tabs { op: EpTabOp::Uniform { n: 4 }, set_initial: false }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::Tabs {
+                op: EpTabOp::Uniform { n: 4 },
+                set_initial: false
+            }]
+        );
     }
 
     #[test]
     fn test_tab_explicit() {
         let dirs = parse("T=(9,17,25)").unwrap();
         // 9→8, 17→16, 25→24 (convert 1-based to 0-based)
-        assert_eq!(dirs, vec![EpDirective::Tabs {
-            op: EpTabOp::Explicit { cols: vec![8, 16, 24] },
-            set_initial: false,
-        }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::Tabs {
+                op: EpTabOp::Explicit {
+                    cols: vec![8, 16, 24]
+                },
+                set_initial: false,
+            }]
+        );
     }
 
     #[test]
     fn test_set_initial_prefix() {
         let dirs = parse("$K=I").unwrap();
-        assert_eq!(dirs, vec![EpDirective::KeyboardMode {
-            mode: EpKeyboardMode::Insert, set_initial: true,
-        }]);
+        assert_eq!(
+            dirs,
+            vec![EpDirective::KeyboardMode {
+                mode: EpKeyboardMode::Insert,
+                set_initial: true,
+            }]
+        );
     }
 
     #[test]
     fn test_multi_param() {
         let dirs = parse("M=(1,79),K=I").unwrap();
         assert_eq!(dirs.len(), 2);
-        assert_eq!(dirs[0], EpDirective::LrMargins { left_margin: 0, right_margin: 79, set_initial: false });
-        assert_eq!(dirs[1], EpDirective::KeyboardMode { mode: EpKeyboardMode::Insert, set_initial: false });
+        assert_eq!(
+            dirs[0],
+            EpDirective::LrMargins {
+                left_margin: 0,
+                right_margin: 79,
+                set_initial: false
+            }
+        );
+        assert_eq!(
+            dirs[1],
+            EpDirective::KeyboardMode {
+                mode: EpKeyboardMode::Insert,
+                set_initial: false
+            }
+        );
     }
 
     #[test]

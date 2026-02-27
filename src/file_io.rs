@@ -58,7 +58,12 @@ pub fn open_input(path: &Path) -> io::Result<FileHandle> {
 }
 
 /// Open a file for writing, using a temp path to avoid overwriting until finalized.
-pub fn open_output(path: &Path, entab: bool, versions: usize, purge: bool) -> io::Result<FileHandle> {
+pub fn open_output(
+    path: &Path,
+    entab: bool,
+    versions: usize,
+    purge: bool,
+) -> io::Result<FileHandle> {
     let base = path.to_string_lossy().into_owned();
     let mut temp_path = PathBuf::from(format!("{}-lw", base));
     let mut i = 1usize;

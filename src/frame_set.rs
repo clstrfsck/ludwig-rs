@@ -1,10 +1,16 @@
 //! `FrameSet`: collection of named frames and the global span registry.
 
+use std::fmt;
+
 use crate::MarkId;
+use crate::code::{CompiledCode, ExecOutcome};
+use crate::exec_context::ExecutionContext;
 use crate::file_io::FileHandle;
 use crate::frame::{Frame, FrameOptions, FrameRegistry, KeyboardMode, default_tab_stops};
+use crate::interpreter;
 use crate::span::{Span, SpanRegistry};
 
+pub const DEFAULT_FRAME_NAME: &str = "LUDWIG";
 pub const COMMAND_FRAME_NAME: &str = "COMMAND";
 pub const HEAP_FRAME_NAME: &str = "HEAP";
 pub const OOPS_FRAME_NAME: &str = "OOPS";
@@ -14,23 +20,23 @@ pub const SPECIAL_FRAME_NAMES: &[&str] = &[COMMAND_FRAME_NAME, HEAP_FRAME_NAME, 
 /// Updated by EP with the `$` prefix.
 #[derive(Debug, Clone)]
 pub struct FrameDefaults {
-    pub left_margin:   usize,
-    pub right_margin:  usize,
-    pub margin_top:    usize,
+    pub left_margin: usize,
+    pub right_margin: usize,
+    pub margin_top: usize,
     pub margin_bottom: usize,
-    pub tab_stops:     Vec<bool>,
-    pub options:       FrameOptions,
+    pub tab_stops: Vec<bool>,
+    pub options: FrameOptions,
 }
 
 impl Default for FrameDefaults {
     fn default() -> Self {
         Self {
-            left_margin:   0,
-            right_margin:  79,
-            margin_top:    0,
+            left_margin: 0,
+            right_margin: 79,
+            margin_top: 0,
             margin_bottom: 0,
-            tab_stops:     default_tab_stops(),
-            options:       FrameOptions::default(),
+            tab_stops: default_tab_stops(),
+            options: FrameOptions::default(),
         }
     }
 }
@@ -54,6 +60,17 @@ pub struct FrameSet {
 }
 
 impl FrameSet {
+    /// Create a new empty frame set with the default main frame.
+    pub fn empty() -> Self {
+        Self::new(Frame::new(DEFAULT_FRAME_NAME))
+    }
+
+    /// Create a frame set from an initial buffer string.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Self {
+        Self::new(Frame::from_str(DEFAULT_FRAME_NAME, s))
+    }
+
     /// Wrap an existing frame as the default / current frame.
     /// Fresh special frames are also created.
     pub fn new(main_frame: Frame) -> Self {
@@ -78,12 +95,12 @@ impl FrameSet {
     /// Create a new frame whose parameters are initialised from `defaults`.
     pub fn create_frame_from_defaults(&self, name: &str) -> Frame {
         let mut f = Frame::new(name);
-        f.left_margin   = self.defaults.left_margin;
-        f.right_margin  = self.defaults.right_margin;
-        f.margin_top    = self.defaults.margin_top;
+        f.left_margin = self.defaults.left_margin;
+        f.right_margin = self.defaults.right_margin;
+        f.margin_top = self.defaults.margin_top;
         f.margin_bottom = self.defaults.margin_bottom;
-        f.tab_stops     = self.defaults.tab_stops.clone();
-        f.options       = self.defaults.options.clone();
+        f.tab_stops = self.defaults.tab_stops.clone();
+        f.options = self.defaults.options.clone();
         f
     }
 
@@ -129,6 +146,17 @@ impl FrameSet {
         self.frames
             .get_mut(&self.current_name)
             .expect("current frame must exist")
+    }
+
+    /// Check whether the current frame has been modified.
+    pub fn modified(&self) -> bool {
+        self.current_frame().get_mark(MarkId::Modified).is_some()
+    }
+
+    /// Execute compiled code against the current frame set.
+    pub fn execute(&mut self, code: &CompiledCode) -> ExecOutcome {
+        let mut ctx = ExecutionContext::new(self);
+        interpreter::execute(&mut ctx, code)
     }
 
     /// Mutable reference to the HEAP frame.
@@ -199,3 +227,13 @@ impl FrameSet {
 fn normalise(s: &str) -> String {
     s.to_uppercase()
 }
+
+impl fmt::Display for FrameSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.current_frame())
+    }
+}
+
+#[cfg(test)]
+#[path = "frame_set/integration_tests.rs"]
+mod integration_tests;

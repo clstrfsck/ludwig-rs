@@ -2,8 +2,8 @@
 
 mod edit;
 mod motion;
-mod predicate;
 pub(crate) mod params;
+mod predicate;
 mod search;
 mod word;
 
@@ -35,9 +35,9 @@ pub fn default_tab_stops() -> Vec<bool> {
 /// Options flags for a frame (EP `O=` sub-command).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FrameOptions {
-    pub auto_indent: bool,  // O=I
-    pub auto_wrap:   bool,  // O=W
-    pub newline:     bool,  // O=N
+    pub auto_indent: bool, // O=I
+    pub auto_wrap: bool,   // O=W
+    pub newline: bool,     // O=N
 }
 
 /// Keyboard mode (EP `K=` sub-command). Global to the session, not per-frame.

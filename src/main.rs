@@ -3,9 +3,10 @@ use std::fs;
 use std::io::{self, IsTerminal, Read};
 
 use ludwig::app::App;
+use ludwig::frame_set::FrameSet;
 use ludwig::screen::Screen;
 use ludwig::terminal::{CrosstermTerminal, Terminal};
-use ludwig::{Editor, ExecOutcome, compile};
+use ludwig::{ExecOutcome, compile};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -75,10 +76,10 @@ fn run_interactive(maybe_path: Option<String>) {
         String::new()
     };
 
-    let editor = Editor::from_str(&file_contents);
+    let frame_set = FrameSet::from_str(&file_contents);
     let mut terminal = CrosstermTerminal::new();
     let screen = Screen::new(terminal.size());
-    let mut app = App::new(editor, screen, maybe_path);
+    let mut app = App::new(frame_set, screen, maybe_path);
 
     if let Err(e) = app.run(&mut terminal) {
         // Make sure terminal is cleaned up even on error
@@ -127,8 +128,8 @@ fn run_batch(maybe_path: Option<String>) {
         std::process::exit(0);
     });
 
-    let mut editor = Editor::from_str(&file_contents);
-    let outcome = editor.execute(&code);
+    let mut frame_set = FrameSet::from_str(&file_contents);
+    let outcome = frame_set.execute(&code);
 
     let failed = !matches!(
         outcome,
@@ -142,11 +143,11 @@ fn run_batch(maybe_path: Option<String>) {
         println!("{}", line);
     }
     if !failed
-        && editor.modified()
+        && frame_set.modified()
         && let Some(path) = maybe_path.as_ref()
     {
         fs::rename(path, format!("{}~1", path)).unwrap();
-        let mut contents = editor.to_string();
+        let mut contents = frame_set.to_string();
         if !contents.is_empty() && !contents.ends_with('\n') {
             contents.push('\n');
         }
