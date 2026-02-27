@@ -9,6 +9,8 @@ use crate::exec_context::{ExecutionContext, MAX_RECURSION_DEPTH, parse_span_name
 use crate::frame::{
     CaseMode, EditCommands, MotionCommands, PredicateCommands, SearchCommands, WordCommands,
 };
+use crate::frame_set::COMMAND_FRAME_NAME;
+use crate::Position;
 use crate::{CmdFailure, CmdResult, LeadParam, TrailParam, compile};
 
 /// Execute compiled code against an execution context. Top-level entry point.
@@ -38,6 +40,7 @@ fn execute_instruction(ctx: &mut ExecutionContext, instr: &Instruction) -> ExecO
             let outcome = match op {
                 CmdOp::SpanExecute => execute_span(ctx, *lead, tpars, true),
                 CmdOp::SpanExecuteNoRecompile => execute_span(ctx, *lead, tpars, false),
+                CmdOp::FileExecute => execute_file_execute(ctx, *lead, tpars),
                 _ => {
                     let result = dispatch_cmd(ctx, *op, *lead, tpars);
                     if result.is_success() {
@@ -352,9 +355,74 @@ fn dispatch_cmd(
         CmdOp::FrameParameters => ctx.cmd_frame_parameters(tpars),
         CmdOp::SetMarginLeft => ctx.cmd_set_margin_left(lead),
         CmdOp::SetMarginRight => ctx.cmd_set_margin_right(lead),
+        // File commands (FX is handled in execute_instruction, not here)
+        CmdOp::FileInput        => ctx.cmd_file_input(lead, tpars),
+        CmdOp::FileOutput       => ctx.cmd_file_output(lead, tpars),
+        CmdOp::FileEdit         => ctx.cmd_file_edit(lead, tpars),
+        CmdOp::FileRewind       => ctx.cmd_file_rewind(lead),
+        CmdOp::FileKill         => ctx.cmd_file_kill(lead),
+        CmdOp::FileSave         => ctx.cmd_file_save(lead),
+        CmdOp::FileTable        => ctx.cmd_file_table(lead),
+        CmdOp::FileRead         => ctx.cmd_file_read(lead),
+        CmdOp::FileWrite        => ctx.cmd_file_write(lead),
+        CmdOp::FileGlobalInput  => ctx.cmd_fglobal_input(lead, tpars),
+        CmdOp::FileGlobalOutput => ctx.cmd_fglobal_output(lead, tpars),
+        CmdOp::FileGlobalRewind => ctx.cmd_fglobal_rewind(lead),
+        CmdOp::FileGlobalKill   => ctx.cmd_fglobal_kill(lead),
         // FIXME: remove this when everything is implemented
         _ => CmdResult::Failure(CmdFailure::NotImplemented),
     }
+}
+
+/// FX — File Execute
+///
+/// Reads a file, compiles it as Ludwig commands, loads it into the COMMAND frame,
+/// then executes it.  Returns Failure if we are already in the COMMAND frame,
+/// if the file cannot be read, or if it does not compile.
+fn execute_file_execute(
+    ctx: &mut ExecutionContext,
+    lead: LeadParam,
+    tpars: &[TrailParam],
+) -> ExecOutcome {
+    if !matches!(lead, LeadParam::None | LeadParam::Plus) {
+        return ExecOutcome::Failure;
+    }
+
+    // Cannot execute FX from within the COMMAND frame.
+    if ctx.frame_set.current_name() == COMMAND_FRAME_NAME {
+        return ExecOutcome::Failure;
+    }
+
+    let path = tpars[0].content.trim().to_string();
+
+    // Read file content.
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return ExecOutcome::Failure,
+    };
+
+    // Compile the content.
+    let code = match compile(&content) {
+        Ok(c) => c,
+        Err(_) => return ExecOutcome::Failure,
+    };
+
+    // Load content into the COMMAND frame (for inspection; execution stays on
+    // the current data frame, mirroring how EX/EN work).
+    if let Some(cmd_frame) = ctx.frame_set.get_frame_mut(COMMAND_FRAME_NAME) {
+        cmd_frame.clear_content();
+        if !content.is_empty() {
+            cmd_frame.insert_at(Position::zero(), &content);
+        }
+    }
+
+    // Execute compiled code against the current (data) frame — no frame switch.
+    ctx.recursion_depth += 1;
+    let outcome = execute(ctx, &code);
+    let outcome = unwrap_exit_level(outcome);
+    ctx.recursion_depth -= 1;
+
+    outcome
 }
 
 #[cfg(test)]

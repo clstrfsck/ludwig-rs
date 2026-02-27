@@ -20,6 +20,7 @@ use std::ops::RangeBounds;
 use ropey::Rope;
 
 use crate::CompiledCode;
+use crate::file_io::FileHandle;
 use crate::marks::{MarkId, MarkSet};
 use crate::position::Position;
 
@@ -73,6 +74,10 @@ pub struct Frame {
     pub margin_top: usize,
     /// Bottom scroll margin (rows from bottom of screen, default 0).
     pub margin_bottom: usize,
+    /// Input file opened on this frame (FI / FE).
+    pub input_file: Option<FileHandle>,
+    /// Output file opened on this frame (FO / FE).
+    pub output_file: Option<FileHandle>,
 }
 
 impl Default for Frame {
@@ -103,6 +108,8 @@ impl Frame {
             tab_stops: default_tab_stops(),
             margin_top: 0,
             margin_bottom: 0,
+            input_file: None,
+            output_file: None,
         }
     }
 
@@ -124,6 +131,8 @@ impl Frame {
             tab_stops: default_tab_stops(),
             margin_top: 0,
             margin_bottom: 0,
+            input_file: None,
+            output_file: None,
         }
     }
 }
@@ -160,6 +169,16 @@ impl Frame {
     /// Unset a mark
     pub fn unset_mark(&mut self, id: MarkId) {
         self.marks.unset(id);
+    }
+
+    /// Clear all text content and marks, leaving frame settings (margins, tab stops, etc.) intact.
+    ///
+    /// After this call the frame is equivalent to a freshly created empty frame with the
+    /// same name and settings.  Dot is reset to (0, 0).
+    pub fn clear_content(&mut self) {
+        self.rope = Rope::new();
+        self.marks = MarkSet::new();
+        self.code = None;
     }
 
     /// Get the compiled code for the frame

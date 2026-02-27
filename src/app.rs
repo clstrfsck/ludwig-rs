@@ -8,9 +8,8 @@ use anyhow::Result;
 use crate::TrailParam;
 use crate::code::{CmdOp, CompiledCode, Instruction};
 use crate::compiler;
-use crate::edit_mode::EditMode;
 use crate::editor::Editor;
-use crate::frame::EditCommands;
+use crate::frame::{EditCommands, KeyboardMode};
 use crate::keybind::{self, KeyAction};
 use crate::lead_param::LeadParam;
 use crate::screen::Screen;
@@ -20,7 +19,6 @@ use crate::terminal::Terminal;
 pub struct App {
     pub editor: Editor,
     pub screen: Screen,
-    pub mode: EditMode,
     pub file_path: Option<String>,
     pub running: bool,
 }
@@ -30,7 +28,6 @@ impl App {
         Self {
             editor,
             screen,
-            mode: EditMode::Insert,
             file_path,
             running: true,
         }
@@ -83,16 +80,15 @@ impl App {
                 self.handle_save(terminal);
             }
             KeyAction::ToggleMode => {
-                self.mode = match self.mode {
-                    EditMode::Insert => EditMode::Overtype,
-                    EditMode::Overtype => EditMode::Insert,
-                    EditMode::Command => EditMode::Insert,
-                };
+                self.editor.set_keyboard_mode(match self.editor.keyboard_mode() {
+                    KeyboardMode::Insert => KeyboardMode::Overtype,
+                    KeyboardMode::Overtype => KeyboardMode::Insert,
+                    KeyboardMode::Command => KeyboardMode::Insert,
+                });
             }
             KeyAction::Resize => {
                 let size = terminal.size();
                 self.screen.resize(size);
-                self.screen.invalidate();
                 self.screen.redraw(self.editor.current_frame(), terminal);
             }
             KeyAction::Ignore => {}
@@ -103,16 +99,17 @@ impl App {
 
     /// Handle inserting a character in insert or overtype mode.
     fn handle_insert_char(&mut self, ch: char) {
+        let keyboard_mode = self.editor.keyboard_mode();
         let frame = self.editor.current_frame_mut();
         let tpar = TrailParam::from_str(&ch.to_string());
-        match self.mode {
-            EditMode::Insert => {
+        match keyboard_mode {
+            KeyboardMode::Insert => {
                 frame.cmd_insert_text(LeadParam::None, &tpar);
             }
-            EditMode::Overtype => {
+            KeyboardMode::Overtype => {
                 frame.cmd_overtype_text(LeadParam::None, &tpar);
             }
-            EditMode::Command => {
+            KeyboardMode::Command => {
                 // In command mode, chars are not inserted
             }
         }

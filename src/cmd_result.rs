@@ -24,6 +24,16 @@ pub enum CmdFailure {
     CantKillFrame,
     /// ER: the return-frame chain is empty.
     NoReturnFrame,
+    /// FI/FO/FE/FGI/FGO: a file is already open for this frame/global slot.
+    FileAlreadyOpen,
+    /// FI/FO/FE/FGI/FGO: the specified file does not exist or cannot be opened.
+    FileOpenError,
+    /// FK/FB/FS/FGR/FGW/FGB/FGK: no file is open for the requested slot.
+    FileNotOpen,
+    /// FS: frame has no output file open.
+    NoOutputFile,
+    /// FX: cannot execute FX from within the COMMAND frame.
+    FxFromCommandFrame,
 }
 
 impl CmdResult {

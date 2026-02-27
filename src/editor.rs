@@ -38,6 +38,16 @@ impl Editor {
         }
     }
 
+    /// Get the current keyboard mode.
+    pub fn keyboard_mode(&self) -> crate::frame::KeyboardMode {
+        self.frame_set.keyboard_mode
+    }
+
+    /// Set the current keyboard mode.
+    pub fn set_keyboard_mode(&mut self, mode: crate::frame::KeyboardMode) {
+        self.frame_set.keyboard_mode = mode;
+    }
+
     /// Get a reference to the current frame.
     pub fn current_frame(&self) -> &Frame {
         self.frame_set.current_frame()
@@ -1722,5 +1732,313 @@ mod tests {
         let code = compile("5J{").unwrap();
         let outcome = editor.execute(&code);
         assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 9: File I/O command tests
+    // -----------------------------------------------------------------------
+
+    #[cfg(test)]
+    mod file_io_tests {
+        use super::*;
+        use std::fs;
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Helper: build a temporary file with the given content and return it.
+        // The temp file stays alive as long as the returned NamedTempFile is alive.
+        fn write_temp(content: &str) -> NamedTempFile {
+            let mut f = NamedTempFile::new().unwrap();
+            f.write_all(content.as_bytes()).unwrap();
+            f
+        }
+
+        // Helper: exec commands on a fresh editor (no initial content).
+        // Uses `|` as delimiter in the command string to avoid conflicts with
+        // path separators in temporary file paths.
+        fn exec_empty(commands: &str) -> (Editor, ExecOutcome) {
+            let mut editor = Editor::new();
+            let code = compile(commands).unwrap();
+            let outcome = editor.execute(&code);
+            (editor, outcome)
+        }
+
+        // ---- FI — File Input ----
+
+        #[test]
+        fn test_fi_loads_file_into_frame() {
+            let tmp = write_temp("line1\nline2\n");
+            let path = tmp.path().to_str().unwrap();
+            // Use `|` as delimiter so that `/` in the path is not treated as the
+            // trailing-parameter delimiter.
+            let cmd = format!("FI|{path}|");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            assert_eq!(editor.to_string(), "line1\nline2\n");
+            // Frame should have an input handle open.
+            assert!(editor.frame_set.current_frame().input_file.is_some());
+        }
+
+        #[test]
+        fn test_fi_fails_on_missing_file() {
+            // Path does not exist — FI should return Failure.
+            let (_, outcome) = exec_empty("FI|/no/such/file/here.txt|");
+            assert_eq!(outcome, ExecOutcome::Failure);
+        }
+
+        #[test]
+        fn test_fi_close_minus() {
+            let tmp = write_temp("hello\n");
+            let path = tmp.path().to_str().unwrap();
+            let cmd = format!("FI|{path}|-FI||");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            // After close the handle should be gone.
+            assert!(editor.frame_set.current_frame().input_file.is_none());
+        }
+
+        #[test]
+        fn test_fi_fails_if_already_open() {
+            let tmp = write_temp("hello\n");
+            let path = tmp.path().to_str().unwrap();
+            // Open twice — second FI should fail.
+            let cmd = format!("FI|{path}|FI|{path}|");
+            let (_, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Failure);
+        }
+
+        // ---- FO — File Output ----
+
+        #[test]
+        fn test_fo_creates_temp_file_and_finalizes() {
+            let tmp = write_temp("");
+            let path = tmp.path().to_str().unwrap();
+            let cmd = format!("I/hello world/FO|{path}|-FO||");
+            let (_, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            // `I/hello world/` inserts without a trailing newline, so the file
+            // should contain exactly what the frame rope holds.
+            let written = fs::read_to_string(path).unwrap();
+            assert_eq!(written, "hello world");
+        }
+
+        #[test]
+        fn test_fo_close_minus_writes_content() {
+            let tmp = write_temp("");
+            let path = tmp.path().to_str().unwrap();
+            let mut editor = Editor::from_str("alpha\nbeta\n");
+            let code = compile(&format!("FO|{path}|-FO||")).unwrap();
+            let outcome = editor.execute(&code);
+            assert_eq!(outcome, ExecOutcome::Success);
+            let written = fs::read_to_string(path).unwrap();
+            assert_eq!(written, "alpha\nbeta\n");
+        }
+
+        // ---- FE — File Edit ----
+
+        #[test]
+        fn test_fe_opens_both_and_loads_content() {
+            let tmp = write_temp("original line\n");
+            let path = tmp.path().to_str().unwrap();
+            let cmd = format!("FE|{path}|");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            assert_eq!(editor.to_string(), "original line\n");
+            assert!(editor.frame_set.current_frame().input_file.is_some());
+            assert!(editor.frame_set.current_frame().output_file.is_some());
+        }
+
+        #[test]
+        fn test_fe_close_writes_and_finalizes() {
+            let tmp = write_temp("old content\n");
+            let path = tmp.path().to_str().unwrap();
+            let cmd = format!("FE|{path}|I/new /-FE||");
+            let (_, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            let written = fs::read_to_string(path).unwrap();
+            assert_eq!(written, "new old content\n");
+        }
+
+        // ---- FK — File Kill ----
+
+        #[test]
+        fn test_fk_deletes_temp_without_creating_real_file() {
+            let tmp_dir = tempfile::tempdir().unwrap();
+            let path = tmp_dir.path().join("output.txt");
+            let path_str = path.to_str().unwrap();
+            let cmd = format!("I/data/FO|{path_str}|FK");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            // Real file should NOT exist.
+            assert!(!path.exists());
+            // Handle should be gone.
+            assert!(editor.frame_set.current_frame().output_file.is_none());
+        }
+
+        // ---- FB — File Back (rewind) ----
+
+        #[test]
+        fn test_fb_rewinds_and_reloads() {
+            let tmp = write_temp("line1\nline2\n");
+            let path = tmp.path().to_str().unwrap();
+            // Open file, modify frame, then rewind — frame should reset to file content.
+            let cmd = format!("FI|{path}|I/EXTRA /FB");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            // After FB, frame is reloaded from the file (original content).
+            assert_eq!(editor.to_string(), "line1\nline2\n");
+        }
+
+        // ---- FS — File Save ----
+
+        #[test]
+        fn test_fs_saves_if_modified_and_reopens() {
+            let tmp = write_temp("original\n");
+            let path = tmp.path().to_str().unwrap();
+            // FE opens input+output; insert text → modified; FS saves.
+            let cmd = format!("FE|{path}|I/prefix /FS");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            // The written file should have the updated content.
+            let written = fs::read_to_string(path).unwrap();
+            assert_eq!(written, "prefix original\n");
+            // Handles should be reopened after FS.
+            assert!(editor.frame_set.current_frame().input_file.is_some());
+            assert!(editor.frame_set.current_frame().output_file.is_some());
+        }
+
+        #[test]
+        fn test_fs_noop_if_not_modified() {
+            let tmp = write_temp("content\n");
+            let path = tmp.path().to_str().unwrap();
+            // FE then FS without any edits → file unchanged.
+            let cmd = format!("FE|{path}|FS");
+            let (_, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            let written = fs::read_to_string(path).unwrap();
+            assert_eq!(written, "content\n");
+        }
+
+        #[test]
+        fn test_fs_fails_if_no_output_file() {
+            let tmp = write_temp("content\n");
+            let path = tmp.path().to_str().unwrap();
+            // FI only (no output) → FS should fail.
+            let cmd = format!("FI|{path}|FS");
+            let (_, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Failure);
+        }
+
+        // ---- FX — File Execute ----
+
+        #[test]
+        fn test_fx_executes_command_file() {
+            // Create a command file that inserts "hello".
+            let mut cmd_file = NamedTempFile::new().unwrap();
+            cmd_file.write_all(b"I/hello/").unwrap();
+            let cmd_path = cmd_file.path().to_str().unwrap();
+
+            let cmd = format!("FX|{cmd_path}|");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            // `I/hello/` inserts without a trailing newline.
+            assert_eq!(editor.to_string(), "hello");
+        }
+
+        #[test]
+        fn test_fx_fails_on_missing_file() {
+            let (_, outcome) = exec_empty("FX|/no/such/file.lud|");
+            assert_eq!(outcome, ExecOutcome::Failure);
+        }
+
+        // ---- FGI / FGO / FGR / FGW / FGB / FGK ----
+
+        #[test]
+        fn test_fgr_reads_lines_from_global_input() {
+            let tmp = write_temp("alpha\nbeta\ngamma\n");
+            let path = tmp.path().to_str().unwrap();
+            // Open global input, read 2 lines into (empty) frame.
+            let cmd = format!("FGI|{path}|2FGR");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            // Two lines should have been inserted.
+            assert_eq!(editor.to_string(), "alpha\nbeta\n");
+        }
+
+        #[test]
+        fn test_fgr_at_eof_fails() {
+            let tmp = write_temp("only_one\n");
+            let path = tmp.path().to_str().unwrap();
+            // Read 1 line (succeeds), then try to read again (EOF → failure).
+            let cmd = format!("FGI|{path}|FGRFGR");
+            let (_, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Failure);
+        }
+
+        #[test]
+        fn test_fgw_writes_lines_to_global_output() {
+            let mut editor = Editor::from_str("line1\nline2\nline3\n");
+            // Set up a global output file.
+            let tmp_dir = tempfile::tempdir().unwrap();
+            let out_path = tmp_dir.path().join("out.txt");
+            let out_str = out_path.to_str().unwrap();
+
+            let code = compile(&format!("FGO|{out_str}|2FGWFGW-FGO||")).unwrap();
+            let outcome = editor.execute(&code);
+            assert_eq!(outcome, ExecOutcome::Success);
+
+            let written = fs::read_to_string(&out_path).unwrap();
+            assert_eq!(written, "line1\nline2\nline3\n");
+        }
+
+        #[test]
+        fn test_fgb_rewinds_global_input() {
+            let tmp = write_temp("lineA\nlineB\n");
+            let path = tmp.path().to_str().unwrap();
+            // Read all, rewind, read again → same content inserted twice.
+            let cmd = format!("FGI|{path}|2FGRFGB2FGR");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            // Four lines total: lineA, lineB, lineA, lineB.
+            assert_eq!(editor.to_string(), "lineA\nlineB\nlineA\nlineB\n");
+        }
+
+        #[test]
+        fn test_fgk_deletes_global_output_temp() {
+            let tmp_dir = tempfile::tempdir().unwrap();
+            let out_path = tmp_dir.path().join("killed.txt");
+            let out_str = out_path.to_str().unwrap();
+
+            let (editor, outcome) = exec_empty(&format!("FGO|{out_str}|FGK"));
+            assert_eq!(outcome, ExecOutcome::Success);
+            // Real file should NOT exist.
+            assert!(!out_path.exists());
+            // Handle should be gone.
+            assert!(editor.frame_set.global_output.is_none());
+        }
+
+        #[test]
+        fn test_fgi_close_minus() {
+            let tmp = write_temp("data\n");
+            let path = tmp.path().to_str().unwrap();
+            let cmd = format!("FGI|{path}|-FGI||");
+            let (editor, outcome) = exec_empty(&cmd);
+            assert_eq!(outcome, ExecOutcome::Success);
+            assert!(editor.frame_set.global_input.is_none());
+        }
+
+        #[test]
+        fn test_fgo_close_minus_creates_file() {
+            let tmp_dir = tempfile::tempdir().unwrap();
+            let out_path = tmp_dir.path().join("result.txt");
+            let out_str = out_path.to_str().unwrap();
+
+            let mut editor = Editor::from_str("written content\n");
+            let code = compile(&format!("FGO|{out_str}|FGW-FGO||")).unwrap();
+            editor.execute(&code);
+
+            let written = fs::read_to_string(&out_path).unwrap();
+            assert_eq!(written, "written content\n");
+        }
     }
 }

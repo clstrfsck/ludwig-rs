@@ -1,6 +1,7 @@
 //! `FrameSet`: collection of named frames and the global span registry.
 
 use crate::MarkId;
+use crate::file_io::FileHandle;
 use crate::frame::{Frame, FrameOptions, FrameRegistry, KeyboardMode, default_tab_stops};
 use crate::span::{Span, SpanRegistry};
 
@@ -46,6 +47,10 @@ pub struct FrameSet {
     pub defaults: FrameDefaults,
     /// Global keyboard mode (EP `K=`).
     pub keyboard_mode: KeyboardMode,
+    /// Global input file (FGI) — shared across all frames.
+    pub global_input: Option<FileHandle>,
+    /// Global output file (FGO) — shared across all frames.
+    pub global_output: Option<FileHandle>,
 }
 
 impl FrameSet {
@@ -65,6 +70,8 @@ impl FrameSet {
             next_bound_id: 0,
             defaults: FrameDefaults::default(),
             keyboard_mode: KeyboardMode::default(),
+            global_input: None,
+            global_output: None,
         }
     }
 

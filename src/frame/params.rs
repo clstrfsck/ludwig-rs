@@ -125,10 +125,6 @@ impl Parser {
             Ok(None)
         }
     }
-
-    fn at_end(&self) -> bool {
-        self.pos >= self.chars.len()
-    }
 }
 
 // ─── Public parse entry point ─────────────────────────────────────────────────
@@ -271,7 +267,7 @@ fn parse_lr_margins(
         left_user = 0; // sentinel: use dot.column + 1
     } else if let Some(n) = p.try_parse_uint()? {
         // 1-based; 0 is not valid (use '.' for dot column).
-        if n < 1 || n > MAX_COL { return Err(()); }
+        if !(1..=MAX_COL).contains(&n) { return Err(()); }
         left_user = n;
     }
 
@@ -282,7 +278,7 @@ fn parse_lr_margins(
             p.next();
             right_user = 0; // sentinel: use dot.column + 1
         } else if let Some(n) = p.try_parse_uint()? {
-            if n < 1 || n > MAX_COL { return Err(()); }
+            if !(1..=MAX_COL).contains(&n) { return Err(()); }
             right_user = n;
         }
     }
@@ -350,7 +346,7 @@ fn parse_tabs(p: &mut Parser, set_initial: bool) -> Result<EpDirective, ()> {
             let mut cols = Vec::new();
             loop {
                 let col_1based = p.parse_uint()?;
-                if col_1based < 1 || col_1based > MAX_COL { return Err(()); }
+                if !(1..=MAX_COL).contains(&col_1based) { return Err(()); }
                 cols.push(col_1based - 1);  // convert to 0-based
                 match p.next() {
                     ')' => break,

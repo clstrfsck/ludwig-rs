@@ -397,6 +397,76 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus),
         tpar_count: 1
     },
+    "fb" => CmdInfo {
+        op: CmdOp::FileRewind,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 0
+    },
+    "fe" => CmdInfo {
+        op: CmdOp::FileEdit,
+        allowed_leads: lead_param_mask!(None, Plus, Minus),
+        tpar_count: 1
+    },
+    "fgb" => CmdInfo {
+        op: CmdOp::FileGlobalRewind,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 0
+    },
+    "fgi" => CmdInfo {
+        op: CmdOp::FileGlobalInput,
+        allowed_leads: lead_param_mask!(None, Plus, Minus),
+        tpar_count: 1
+    },
+    "fgk" => CmdInfo {
+        op: CmdOp::FileGlobalKill,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 0
+    },
+    "fgo" => CmdInfo {
+        op: CmdOp::FileGlobalOutput,
+        allowed_leads: lead_param_mask!(None, Plus, Minus),
+        tpar_count: 1
+    },
+    "fgr" => CmdInfo {
+        op: CmdOp::FileRead,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "fgw" => CmdInfo {
+        op: CmdOp::FileWrite,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "fi" => CmdInfo {
+        op: CmdOp::FileInput,
+        allowed_leads: lead_param_mask!(None, Plus, Minus),
+        tpar_count: 1
+    },
+    "fk" => CmdInfo {
+        op: CmdOp::FileKill,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 0
+    },
+    "fo" => CmdInfo {
+        op: CmdOp::FileOutput,
+        allowed_leads: lead_param_mask!(None, Plus, Minus),
+        tpar_count: 1
+    },
+    "fs" => CmdInfo {
+        op: CmdOp::FileSave,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 0
+    },
+    "ft" => CmdInfo {
+        op: CmdOp::FileTable,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 0
+    },
+    "fx" => CmdInfo {
+        op: CmdOp::FileExecute,
+        allowed_leads: lead_param_mask!(None, Plus),
+        tpar_count: 1
+    },
     "ed" => CmdInfo {
         op: CmdOp::FrameEdit,
         allowed_leads: lead_param_mask!(None),
