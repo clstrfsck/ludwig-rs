@@ -3,11 +3,178 @@
 //! The Screen reads Frame state through public accessors and uses a Terminal
 //! to render the visible portion of text. It uses a double-buffered cell grid:
 //! render into `next`, diff against `current`, emit only changed cells, then swap.
+//!
+//! This module also defines the [`ScreenBackend`] trait, which is the interface
+//! between the interpreter and the display layer.  The interpreter dispatches
+//! window commands and output messages through this trait so that both batch and
+//! interactive modes share a single execution path.
 
+use crate::Position;
 use crate::cell_buffer::CellBuffer;
+use crate::code::CmdOp;
 use crate::frame::Frame;
+use crate::lead_param::LeadParam;
 use crate::terminal::{TermSize, Terminal};
 use crate::viewport::{FixupAction, Viewport, ViewportParams};
+
+// ─── ScreenBackend trait ──────────────────────────────────────────────────────
+
+/// The interface between the interpreter and the display layer.
+///
+/// Both batch mode (no-op) and interactive mode (terminal rendering) implement
+/// this trait.  The interpreter dispatches window commands and output messages
+/// through it, keeping the execution path identical for both modes.
+pub trait ScreenBackend {
+    /// Number of visible text rows.  Used for WF/WB distance calculations.
+    fn text_height(&self) -> usize;
+
+    /// Dispatch a window command.
+    ///
+    /// Returns `Some(new_dot)` if the command should reposition the dot cursor
+    /// (WF/WB move dot forward/backward by N screen-heights).  Returns `None`
+    /// for commands that only affect the viewport (WT/WE/WM/WN/WL/WR) or for
+    /// unrecognised/invalid lead params.
+    fn handle_window_cmd(
+        &mut self,
+        op: CmdOp,
+        lead: LeadParam,
+        dot: Position,
+        line_count: usize,
+    ) -> Option<Position>;
+
+    /// Emit a line of output text (SI listings, FT table, info messages, …).
+    ///
+    /// In batch mode this writes to stdout.  In interactive mode messages are
+    /// buffered and displayed in the status area after execution completes.
+    fn output_line(&mut self, msg: &str);
+}
+
+// ─── BatchScreenBackend ───────────────────────────────────────────────────────
+
+/// `ScreenBackend` implementation for batch mode.
+///
+/// All window commands are no-ops; output lines go to stdout.
+pub struct BatchScreenBackend;
+
+impl ScreenBackend for BatchScreenBackend {
+    fn text_height(&self) -> usize {
+        24 // conventional terminal height; exact value doesn't matter in batch
+    }
+
+    fn handle_window_cmd(
+        &mut self,
+        _op: CmdOp,
+        _lead: LeadParam,
+        _dot: Position,
+        _line_count: usize,
+    ) -> Option<Position> {
+        None // window commands are no-ops in batch mode
+    }
+
+    fn output_line(&mut self, msg: &str) {
+        println!("{}", msg);
+    }
+}
+
+// ─── InteractiveScreenBackend ─────────────────────────────────────────────────
+
+/// `ScreenBackend` implementation for interactive mode.
+///
+/// Wraps a mutable reference to the [`Screen`] (which owns the viewport and
+/// cell buffers) and buffers output messages for the `App` to display after
+/// execution completes.
+pub struct InteractiveScreenBackend<'a> {
+    screen: &'a mut Screen,
+    messages: Vec<String>,
+}
+
+impl<'a> InteractiveScreenBackend<'a> {
+    pub fn new(screen: &'a mut Screen) -> Self {
+        Self {
+            screen,
+            messages: Vec::new(),
+        }
+    }
+
+    /// Take all buffered messages, clearing the internal buffer.
+    pub fn drain_messages(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.messages)
+    }
+}
+
+impl ScreenBackend for InteractiveScreenBackend<'_> {
+    fn text_height(&self) -> usize {
+        self.screen.text_height()
+    }
+
+    fn handle_window_cmd(
+        &mut self,
+        op: CmdOp,
+        lead: LeadParam,
+        dot: Position,
+        line_count: usize,
+    ) -> Option<Position> {
+        // Parse the repeat count from the lead param.
+        let count: usize = match lead {
+            LeadParam::None | LeadParam::Plus => 1,
+            LeadParam::Pint(n) => n,
+            LeadParam::Pindef => usize::MAX / 2, // effectively "to end"
+            _ => return None,                    // invalid lead for window commands
+        };
+
+        let height = self.screen.text_height();
+
+        match op {
+            CmdOp::WindowForward => {
+                // Move dot forward by count * screen-height lines.
+                let new_line = dot
+                    .line
+                    .saturating_add(count.saturating_mul(height))
+                    .min(line_count);
+                Some(Position::new(new_line, dot.column))
+            }
+            CmdOp::WindowBackward => {
+                // Move dot backward by count * screen-height lines.
+                let new_line = dot.line.saturating_sub(count.saturating_mul(height));
+                Some(Position::new(new_line, dot.column))
+            }
+            CmdOp::WindowTop => {
+                // Position dot's line at the top of the viewport.
+                self.screen.viewport.top_line = dot.line;
+                None
+            }
+            CmdOp::WindowEnd => {
+                // Position dot's line at the bottom of the viewport.
+                self.screen.viewport.top_line = dot.line.saturating_sub(height.saturating_sub(1));
+                None
+            }
+            CmdOp::WindowMiddle => {
+                // Position dot's line at the middle of the viewport.
+                self.screen.viewport.top_line = dot.line.saturating_sub(height / 2);
+                None
+            }
+            CmdOp::WindowNew => {
+                // Force a full redraw on next render pass.
+                self.screen.invalidate();
+                None
+            }
+            CmdOp::WindowLeft => {
+                let scroll = count.min(self.screen.viewport.offset);
+                self.screen.viewport.offset -= scroll;
+                None
+            }
+            CmdOp::WindowRight => {
+                self.screen.viewport.offset = self.screen.viewport.offset.saturating_add(count);
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn output_line(&mut self, msg: &str) {
+        self.messages.push(msg.to_string());
+    }
+}
 
 /// Manages screen rendering.
 pub struct Screen {

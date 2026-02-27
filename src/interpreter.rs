@@ -331,7 +331,9 @@ fn dispatch_cmd(
         CmdOp::LineRight => ctx.current_frame_mut().cmd_line_right(lead),
         CmdOp::DittoUp => ctx.current_frame_mut().cmd_ditto_up(lead),
         CmdOp::DittoDown => ctx.current_frame_mut().cmd_ditto_down(lead),
-        // Window commands are no-ops in batch mode; handled by App in interactive mode.
+        // Window commands are dispatched to the screen backend.
+        // In batch mode the backend is a no-op; in interactive mode it updates
+        // the viewport (and may return a new dot position for WF/WB).
         CmdOp::WindowForward
         | CmdOp::WindowBackward
         | CmdOp::WindowLeft
@@ -339,7 +341,14 @@ fn dispatch_cmd(
         | CmdOp::WindowTop
         | CmdOp::WindowEnd
         | CmdOp::WindowNew
-        | CmdOp::WindowMiddle => CmdResult::Success,
+        | CmdOp::WindowMiddle => {
+            let dot = ctx.current_frame().dot();
+            let line_count = ctx.current_frame().line_count();
+            if let Some(new_dot) = ctx.screen.handle_window_cmd(op, lead, dot, line_count) {
+                ctx.current_frame_mut().set_dot(new_dot);
+            }
+            CmdResult::Success
+        }
         // Span commands
         CmdOp::SpanDefine => ctx.cmd_span_define(lead, tpars),
         CmdOp::SpanCopy => ctx.cmd_span_copy(lead, &tpars[0]),

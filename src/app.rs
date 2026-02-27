@@ -1,18 +1,18 @@
 //! Application event loop for interactive mode.
 //!
 //! The `App` struct ties together the FrameSet, Screen, Terminal, and key bindings
-//! into a main event loop.
+//! into a main event loop.  Command execution always goes through the interpreter
+//! via [`FrameSet::execute_with_screen`]; there is no parallel instruction loop here.
 
 use anyhow::Result;
 
 use crate::TrailParam;
-use crate::code::{CmdOp, CompiledCode, Instruction};
 use crate::compiler;
 use crate::frame::{EditCommands, KeyboardMode};
 use crate::frame_set::FrameSet;
-use crate::keybind::{self, KeyAction};
+use crate::keybind::{self, KeyAction, PromptAction};
 use crate::lead_param::LeadParam;
-use crate::screen::Screen;
+use crate::screen::{InteractiveScreenBackend, Screen};
 use crate::terminal::Terminal;
 
 /// The interactive application state.
@@ -115,117 +115,32 @@ impl App {
         }
     }
 
-    /// Compile and execute a Ludwig command string.
-    /// Window commands are intercepted and handled at the App level.
+    /// Compile and execute a Ludwig command string through the interpreter.
+    ///
+    /// Window commands are dispatched via [`InteractiveScreenBackend`]; the
+    /// viewport is updated in place and the normal `fixup` call at the end of
+    /// `handle_action` handles the subsequent terminal render.
     fn execute_command_string(&mut self, cmd_str: &str, terminal: &mut dyn Terminal) {
         match compiler::compile(cmd_str) {
             Ok(code) => {
-                self.execute_code(&code, terminal);
+                // Rust allows disjoint field borrows: frame_set and screen are
+                // separate fields, so both can be borrowed mutably here.
+                let mut backend = InteractiveScreenBackend::new(&mut self.screen);
+                let outcome = self.frame_set.execute_with_screen(&code, &mut backend);
+
+                // Flush any output lines buffered during execution (e.g. from SI).
+                for msg in backend.drain_messages() {
+                    self.screen.show_message(terminal, &msg);
+                }
+
+                if !outcome.is_success() {
+                    terminal.beep();
+                }
             }
             Err(e) => {
                 self.screen.show_message(terminal, &format!("Error: {}", e));
                 terminal.beep();
             }
-        }
-    }
-
-    /// Execute compiled code, intercepting window commands.
-    fn execute_code(&mut self, code: &CompiledCode, terminal: &mut dyn Terminal) {
-        for instr in code.instructions() {
-            if let Instruction::SimpleCmd { op, lead, .. } = instr
-                && self.try_handle_window_cmd(*op, *lead, terminal)
-            {
-                continue;
-            }
-            // Not a window command — pass single instruction to interpreter
-            let single = CompiledCode::new(vec![instr.clone()]);
-            let outcome = self.frame_set.execute(&single);
-            if !outcome.is_success() {
-                terminal.beep();
-                return;
-            }
-        }
-    }
-
-    /// Try to handle a window command. Returns true if handled.
-    fn try_handle_window_cmd(
-        &mut self,
-        op: CmdOp,
-        lead: LeadParam,
-        terminal: &mut dyn Terminal,
-    ) -> bool {
-        let height = self.screen.text_height();
-
-        let count = match lead {
-            LeadParam::None | LeadParam::Plus => 1,
-            LeadParam::Pint(n) => n,
-            LeadParam::Pindef => usize::MAX,
-            _ => return false,
-        };
-
-        match op {
-            CmdOp::WindowForward => {
-                // Move dot forward by text_height * count lines (like the C reference).
-                // Fixup will scroll the viewport to follow dot.
-                let frame = self.frame_set.current_frame_mut();
-                let dot = frame.dot();
-                let new_line = dot.line.saturating_add(count * height);
-                frame.set_dot(crate::Position::new(new_line, dot.column));
-                true
-            }
-            CmdOp::WindowBackward => {
-                // Move dot backward by text_height * count lines (like the C reference).
-                // Fixup will scroll the viewport to follow dot.
-                let frame = self.frame_set.current_frame_mut();
-                let dot = frame.dot();
-                let new_line = dot.line.saturating_sub(count * height);
-                frame.set_dot(crate::Position::new(new_line, dot.column));
-                true
-            }
-            CmdOp::WindowTop => {
-                // Position dot's line at top of window
-                let dot_line = self.frame_set.current_frame().dot().line;
-                self.screen.viewport.top_line = dot_line;
-                self.screen.invalidate();
-                self.screen.redraw(self.frame_set.current_frame(), terminal);
-                true
-            }
-            CmdOp::WindowEnd => {
-                // Position dot's line at bottom of window
-                let dot_line = self.frame_set.current_frame().dot().line;
-                self.screen.viewport.top_line = dot_line.saturating_sub(height - 1);
-                self.screen.invalidate();
-                self.screen.redraw(self.frame_set.current_frame(), terminal);
-                true
-            }
-            CmdOp::WindowMiddle => {
-                // Position dot's line at middle of window
-                let dot_line = self.frame_set.current_frame().dot().line;
-                self.screen.viewport.top_line = dot_line.saturating_sub(height / 2);
-                self.screen.invalidate();
-                self.screen.redraw(self.frame_set.current_frame(), terminal);
-                true
-            }
-            CmdOp::WindowNew => {
-                // Full screen redraw
-                self.screen.invalidate();
-                self.screen.redraw(self.frame_set.current_frame(), terminal);
-                true
-            }
-            CmdOp::WindowLeft => {
-                let scroll = count.min(self.screen.viewport.offset);
-                self.screen.viewport.offset -= scroll;
-                self.screen.invalidate();
-                self.screen.redraw(self.frame_set.current_frame(), terminal);
-                true
-            }
-            CmdOp::WindowRight => {
-                self.screen.viewport.offset += count;
-                self.screen.invalidate();
-                self.screen.redraw(self.frame_set.current_frame(), terminal);
-                true
-            }
-            _ => false,
         }
     }
 
@@ -238,7 +153,7 @@ impl App {
         self.screen.msg_rows = 1;
         self.screen.update_message_row(terminal, PROMPT, prompt_len);
 
-        // Read command line
+        // Read command line using the keybind prompt abstraction
         let mut input = String::new();
 
         loop {
@@ -247,17 +162,16 @@ impl App {
                 Err(_) => continue,
             };
 
-            match key.code {
-                crossterm::event::KeyCode::Enter => {
+            match keybind::resolve_prompt_key(key) {
+                PromptAction::Accept => {
                     break;
                 }
-                crossterm::event::KeyCode::Esc => {
-                    // Cancel command input
+                PromptAction::Cancel => {
                     self.screen
                         .clear_message(self.frame_set.current_frame(), terminal);
                     return;
                 }
-                crossterm::event::KeyCode::Backspace => {
+                PromptAction::Backspace => {
                     if !input.is_empty() {
                         input.pop();
                         let line = format!("{}{}", PROMPT, input);
@@ -265,13 +179,13 @@ impl App {
                             .update_message_row(terminal, &line, prompt_len + input.len());
                     }
                 }
-                crossterm::event::KeyCode::Char(ch) => {
+                PromptAction::Char(ch) => {
                     input.push(ch);
                     let line = format!("{}{}", PROMPT, input);
                     self.screen
                         .update_message_row(terminal, &line, prompt_len + input.len());
                 }
-                _ => {}
+                PromptAction::Ignore => {}
             }
         }
 
@@ -317,21 +231,9 @@ impl App {
 
     /// Handle save.
     fn handle_save(&mut self, terminal: &mut dyn Terminal) {
-        if let Some(path) = &self.file_path {
-            let mut contents = self.frame_set.to_string();
-            if !contents.is_empty() && !contents.ends_with('\n') {
-                contents.push('\n');
-            }
-            let line_count = contents.lines().count();
-
-            // Create backup
-            let backup = format!("{}~1", path);
-            if std::path::Path::new(path).exists() {
-                let _ = std::fs::rename(path, &backup);
-            }
-
-            match std::fs::write(path, &contents) {
-                Ok(()) => {
+        if let Some(path) = &self.file_path.clone() {
+            match crate::save::write_with_backup(&self.frame_set.to_string(), path, 1) {
+                Ok(line_count) => {
                     self.screen.show_message(
                         terminal,
                         &format!(

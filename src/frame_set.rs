@@ -8,6 +8,7 @@ use crate::exec_context::ExecutionContext;
 use crate::file_io::FileHandle;
 use crate::frame::{Frame, FrameOptions, FrameRegistry, KeyboardMode, default_tab_stops};
 use crate::interpreter;
+use crate::screen::{BatchScreenBackend, ScreenBackend};
 use crate::span::{Span, SpanRegistry};
 
 pub const DEFAULT_FRAME_NAME: &str = "LUDWIG";
@@ -153,10 +154,25 @@ impl FrameSet {
         self.current_frame().get_mark(MarkId::Modified).is_some()
     }
 
-    /// Execute compiled code against the current frame set.
-    pub fn execute(&mut self, code: &CompiledCode) -> ExecOutcome {
-        let mut ctx = ExecutionContext::new(self);
+    /// Execute compiled code with a caller-provided screen backend.
+    ///
+    /// Use this in interactive mode to inject the `InteractiveScreenBackend`
+    /// so window commands update the viewport and output goes to the screen.
+    pub fn execute_with_screen(
+        &mut self,
+        code: &CompiledCode,
+        screen: &mut dyn ScreenBackend,
+    ) -> ExecOutcome {
+        let mut ctx = ExecutionContext::new(self, screen);
         interpreter::execute(&mut ctx, code)
+    }
+
+    /// Execute compiled code in batch mode (no-op screen backend, output to stdout).
+    ///
+    /// All existing callers and tests use this convenience wrapper.
+    pub fn execute(&mut self, code: &CompiledCode) -> ExecOutcome {
+        let mut screen = BatchScreenBackend;
+        self.execute_with_screen(code, &mut screen)
     }
 
     /// Mutable reference to the HEAP frame.

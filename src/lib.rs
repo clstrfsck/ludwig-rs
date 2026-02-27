@@ -38,6 +38,7 @@ mod lead_param;
 mod marks;
 pub mod pattern;
 mod position;
+pub mod save;
 pub mod screen;
 mod span;
 pub mod terminal;

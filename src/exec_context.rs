@@ -10,6 +10,7 @@ use crate::frame::params::{EpDirective, EpKeyboardMode, EpOptionFlag, EpTabOp, p
 use crate::frame::{KeyboardMode, default_tab_stops};
 use crate::frame_set::{FrameSet, SPECIAL_FRAME_NAMES};
 use crate::marks::NUMBERED_MARK_RANGE;
+use crate::screen::ScreenBackend;
 use crate::span::Span;
 
 use crate::{CmdFailure, CmdResult, LeadParam, MarkId, Position, TrailParam, compile};
@@ -20,16 +21,19 @@ pub(crate) struct ExecutionContext<'a> {
     pub(crate) frame_set: &'a mut FrameSet,
     /// Current EX/EN nesting depth; capped at [`MAX_RECURSION_DEPTH`].
     pub(crate) recursion_depth: u32,
+    /// Display backend for window commands and output messages.
+    pub(crate) screen: &'a mut dyn ScreenBackend,
 }
 
 /// Maximum allowed EX/EN recursion depth (spec section 9.8).
 pub(crate) const MAX_RECURSION_DEPTH: u32 = 100;
 
 impl<'a> ExecutionContext<'a> {
-    pub(crate) fn new(frame_set: &'a mut FrameSet) -> Self {
+    pub(crate) fn new(frame_set: &'a mut FrameSet, screen: &'a mut dyn ScreenBackend) -> Self {
         Self {
             frame_set,
             recursion_depth: 0,
+            screen,
         }
     }
 
@@ -375,7 +379,8 @@ impl<'a> ExecutionContext<'a> {
                 }
                 None => String::from("<undefined>"),
             };
-            println!("{:<32} {}", name, preview);
+            self.screen
+                .output_line(&format!("{:<32} {}", name, preview));
         }
         CmdResult::Success
     }

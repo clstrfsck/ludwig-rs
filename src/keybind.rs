@@ -72,6 +72,34 @@ pub fn resolve_key(key: KeyEvent) -> KeyAction {
     }
 }
 
+/// An action from a key press inside the command input prompt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromptAction {
+    /// Confirm the current input and execute it.
+    Accept,
+    /// Discard the input and exit prompt mode.
+    Cancel,
+    /// Delete the last character.
+    Backspace,
+    /// Append a printable character to the input.
+    Char(char),
+    /// No action (ignore the key).
+    Ignore,
+}
+
+/// Resolve a `KeyEvent` to a [`PromptAction`] for use inside the command-input prompt.
+pub fn resolve_prompt_key(key: KeyEvent) -> PromptAction {
+    match key.code {
+        KeyCode::Enter => PromptAction::Accept,
+        KeyCode::Esc => PromptAction::Cancel,
+        KeyCode::Backspace => PromptAction::Backspace,
+        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            PromptAction::Char(ch)
+        }
+        _ => PromptAction::Ignore,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

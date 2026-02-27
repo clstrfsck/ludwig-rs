@@ -4,6 +4,7 @@ use std::io::{self, IsTerminal, Read};
 
 use ludwig::app::App;
 use ludwig::frame_set::FrameSet;
+use ludwig::save::write_with_backup;
 use ludwig::screen::Screen;
 use ludwig::terminal::{CrosstermTerminal, Terminal};
 use ludwig::{ExecOutcome, compile};
@@ -146,21 +147,20 @@ fn run_batch(maybe_path: Option<String>) {
         && frame_set.modified()
         && let Some(path) = maybe_path.as_ref()
     {
-        fs::rename(path, format!("{}~1", path)).unwrap();
-        let mut contents = frame_set.to_string();
-        if !contents.is_empty() && !contents.ends_with('\n') {
-            contents.push('\n');
-        }
-        println!(
-            "{} created ({} line{} written).",
-            path,
-            contents.lines().count(),
-            if contents.lines().count() == 1 {
-                ""
-            } else {
-                "s"
+        let contents = frame_set.to_string();
+        match write_with_backup(&contents, path, 1) {
+            Ok(line_count) => {
+                println!(
+                    "{} created ({} line{} written).",
+                    path,
+                    line_count,
+                    if line_count == 1 { "" } else { "s" }
+                );
             }
-        );
-        fs::write(path, contents).unwrap();
+            Err(e) => {
+                eprintln!("Failed to save {}: {}", path, e);
+                std::process::exit(1);
+            }
+        }
     }
 }
