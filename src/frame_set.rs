@@ -1,5 +1,6 @@
 //! `FrameSet`: collection of named frames and the global span registry.
 
+use std::collections::HashMap;
 use std::fmt;
 
 use crate::MarkId;
@@ -58,6 +59,16 @@ pub struct FrameSet {
     pub global_input: Option<FileHandle>,
     /// Global output file (FGO) — shared across all frames.
     pub global_output: Option<FileHandle>,
+    /// Set to `true` by the `Q` command to signal that the editor should exit.
+    pub quit_requested: bool,
+    /// Set to `true` by the `UP` command to request suspension (interactive only).
+    pub suspend_requested: bool,
+    /// Set to `true` by the `US` command to request a subprocess shell (interactive only).
+    pub subprocess_requested: bool,
+    /// User-defined key bindings installed by the `UK` command.
+    /// Key: canonical key name (e.g. "UP-ARROW", "a", "F1").
+    /// Value: compiled procedure to execute when the key is pressed.
+    pub user_key_bindings: HashMap<String, CompiledCode>,
 }
 
 impl FrameSet {
@@ -90,6 +101,10 @@ impl FrameSet {
             keyboard_mode: KeyboardMode::default(),
             global_input: None,
             global_output: None,
+            quit_requested: false,
+            suspend_requested: false,
+            subprocess_requested: false,
+            user_key_bindings: HashMap::new(),
         }
     }
 

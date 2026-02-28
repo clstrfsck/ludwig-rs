@@ -14,6 +14,7 @@ use crate::keybind::{self, KeyAction, PromptAction};
 use crate::lead_param::LeadParam;
 use crate::screen::{InteractiveScreenBackend, Screen};
 use crate::terminal::Terminal;
+use crossterm::event::KeyEvent;
 
 /// The interactive application state.
 pub struct App {
@@ -48,6 +49,11 @@ impl App {
                 Ok(key) => key,
                 Err(_) => continue,
             };
+
+            // Check user-defined key bindings (UK command) first.
+            if self.dispatch_user_key(key, terminal) {
+                continue;
+            }
 
             let action = keybind::resolve_key(key);
             self.handle_action(action, terminal);
@@ -123,19 +129,7 @@ impl App {
     fn execute_command_string(&mut self, cmd_str: &str, terminal: &mut dyn Terminal) {
         match compiler::compile(cmd_str) {
             Ok(code) => {
-                // Rust allows disjoint field borrows: frame_set and screen are
-                // separate fields, so both can be borrowed mutably here.
-                let mut backend = InteractiveScreenBackend::new(&mut self.screen);
-                let outcome = self.frame_set.execute_with_screen(&code, &mut backend);
-
-                // Flush any output lines buffered during execution (e.g. from SI).
-                for msg in backend.drain_messages() {
-                    self.screen.show_message(terminal, &msg);
-                }
-
-                if !outcome.is_success() {
-                    terminal.beep();
-                }
+                self.execute_compiled_code(&code, terminal);
             }
             Err(e) => {
                 self.screen.show_message(terminal, &format!("Error: {}", e));
@@ -255,5 +249,89 @@ impl App {
                 .show_message(terminal, "No file path specified.");
             terminal.beep();
         }
+    }
+
+    /// Check whether the key event matches a user-defined binding (UK).
+    /// If a binding is found, execute it and return `true`; otherwise return `false`.
+    fn dispatch_user_key(&mut self, key: KeyEvent, terminal: &mut dyn Terminal) -> bool {
+        let name = match keybind::key_event_to_name(key) {
+            Some(n) => n,
+            None => return false,
+        };
+        // Clone the code out to avoid holding a borrow on frame_set.
+        let code = match self.frame_set.user_key_bindings.get(&name) {
+            Some(c) => c.clone(),
+            None => return false,
+        };
+        self.screen
+            .clear_message(self.frame_set.current_frame(), terminal);
+        self.execute_compiled_code(&code, terminal);
+        self.screen.fixup(self.frame_set.current_frame(), terminal);
+        true
+    }
+
+    /// Execute already-compiled code through the interpreter.
+    fn execute_compiled_code(
+        &mut self,
+        code: &crate::code::CompiledCode,
+        terminal: &mut dyn Terminal,
+    ) {
+        let mut backend = InteractiveScreenBackend::new(&mut self.screen);
+        let outcome = self.frame_set.execute_with_screen(code, &mut backend);
+
+        for msg in backend.drain_messages() {
+            self.screen.show_message(terminal, &msg);
+        }
+
+        if self.frame_set.quit_requested {
+            self.frame_set.quit_requested = false;
+            self.running = false;
+        }
+
+        if self.frame_set.suspend_requested {
+            self.frame_set.suspend_requested = false;
+            self.handle_suspend(terminal);
+        }
+
+        if self.frame_set.subprocess_requested {
+            self.frame_set.subprocess_requested = false;
+            self.handle_subprocess(terminal);
+        }
+
+        if !outcome.is_success() {
+            terminal.beep();
+        }
+    }
+
+    /// Handle UP — suspend the editor process and return control to the parent shell.
+    ///
+    /// Cleans up the terminal first, sends SIGTSTP, then reinitialises and redraws
+    /// after the process is resumed.
+    fn handle_suspend(&mut self, terminal: &mut dyn Terminal) {
+        terminal.cleanup().ok();
+        // Send SIGTSTP to the current process using the `kill` shell command.
+        // This avoids requiring a libc dependency for a rarely-used feature.
+        let pid = std::process::id();
+        std::process::Command::new("kill")
+            .args(["-TSTP", &pid.to_string()])
+            .status()
+            .ok();
+        // When resumed (fg), reinitialise and redraw.
+        terminal.init().ok();
+        self.screen.invalidate();
+        self.screen.redraw(self.frame_set.current_frame(), terminal);
+    }
+
+    /// Handle US — spawn a subprocess shell.
+    ///
+    /// Cleans up the terminal, runs the user's shell, then reinitialises and
+    /// redraws after the shell exits.
+    fn handle_subprocess(&mut self, terminal: &mut dyn Terminal) {
+        terminal.cleanup().ok();
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        std::process::Command::new(&shell).status().ok();
+        terminal.init().ok();
+        self.screen.invalidate();
+        self.screen.redraw(self.frame_set.current_frame(), terminal);
     }
 }

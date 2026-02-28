@@ -29,6 +29,12 @@ pub trait MotionCommands {
 
     /// Carriage return command (ZC).
     fn cmd_return(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Tab command (ZT) — move dot right to the next tab stop or margin.
+    fn cmd_tab(&mut self, lead_param: LeadParam) -> CmdResult;
+
+    /// Backtab command (ZB) — move dot left to the previous tab stop or margin.
+    fn cmd_backtab(&mut self, lead_param: LeadParam) -> CmdResult;
 }
 
 impl MotionCommands for Frame {
@@ -177,6 +183,73 @@ impl MotionCommands for Frame {
             LeadParam::Pint(n) => self.return_fwd(n),
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
         }
+    }
+
+    fn cmd_tab(&mut self, lead_param: LeadParam) -> CmdResult {
+        let count = match lead_param {
+            LeadParam::None | LeadParam::Plus => 1usize,
+            LeadParam::Pint(n) => n,
+            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        let max_col = self.tab_stops.len().saturating_sub(1);
+        let mut new_col = self.dot().column;
+
+        for _ in 0..count {
+            if new_col >= max_col {
+                return CmdResult::Failure(CmdFailure::OutOfRange);
+            }
+            loop {
+                new_col += 1;
+                if new_col >= self.tab_stops.len() {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                if self.tab_stops[new_col]
+                    || new_col == self.left_margin
+                    || new_col == self.right_margin
+                {
+                    break;
+                }
+            }
+        }
+
+        let old_dot = self.dot();
+        self.set_mark_at(MarkId::Equals, old_dot);
+        self.set_dot(Position::new(old_dot.line, new_col));
+        CmdResult::Success
+    }
+
+    fn cmd_backtab(&mut self, lead_param: LeadParam) -> CmdResult {
+        let count = match lead_param {
+            LeadParam::None | LeadParam::Plus => 1usize,
+            LeadParam::Pint(n) => n,
+            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+        };
+
+        let mut new_col = self.dot().column;
+
+        for _ in 0..count {
+            if new_col == 0 {
+                return CmdResult::Failure(CmdFailure::OutOfRange);
+            }
+            loop {
+                new_col -= 1;
+                if self.tab_stops[new_col]
+                    || new_col == self.left_margin
+                    || new_col == self.right_margin
+                {
+                    break;
+                }
+                if new_col == 0 {
+                    break;
+                }
+            }
+        }
+
+        let old_dot = self.dot();
+        self.set_mark_at(MarkId::Equals, old_dot);
+        self.set_dot(Position::new(old_dot.line, new_col));
+        CmdResult::Success
     }
 }
 

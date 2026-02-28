@@ -63,12 +63,17 @@ impl ScreenBackend for BatchScreenBackend {
 
     fn handle_window_cmd(
         &mut self,
-        _op: CmdOp,
+        op: CmdOp,
         _lead: LeadParam,
         _dot: Position,
         _line_count: usize,
     ) -> Option<Position> {
-        None // window commands are no-ops in batch mode
+        match op {
+            // ZH: go to beginning of frame in batch mode
+            CmdOp::Home => Some(Position::new(0, 0)),
+            // WS/WH/WU and all other window commands are no-ops in batch mode
+            _ => None,
+        }
     }
 
     fn output_line(&mut self, msg: &str) {
@@ -125,6 +130,13 @@ impl ScreenBackend for InteractiveScreenBackend<'_> {
         let height = self.screen.text_height();
 
         match op {
+            CmdOp::Home => {
+                // ZH: move dot to top-left corner of the visible viewport.
+                Some(Position::new(
+                    self.screen.viewport.top_line,
+                    self.screen.viewport.offset,
+                ))
+            }
             CmdOp::WindowForward => {
                 // Move dot forward by count * screen-height lines.
                 let new_line = dot
@@ -167,6 +179,35 @@ impl ScreenBackend for InteractiveScreenBackend<'_> {
                 self.screen.viewport.offset = self.screen.viewport.offset.saturating_add(count);
                 None
             }
+            CmdOp::WindowScroll => {
+                // WS: scroll the viewport by count lines without moving dot.
+                // Positive = scroll forward (lines move up), negative = backward.
+                let count_signed: i64 = match lead {
+                    LeadParam::None | LeadParam::Plus => 0, // interactive: no-op for now
+                    LeadParam::Pint(n) => n as i64,
+                    LeadParam::Nint(n) => -(n as i64),
+                    LeadParam::Pindef => line_count as i64,
+                    LeadParam::Nindef => -(line_count as i64),
+                    _ => return None,
+                };
+                if count_signed > 0 {
+                    self.screen.viewport.top_line = self
+                        .screen
+                        .viewport
+                        .top_line
+                        .saturating_add(count_signed as usize)
+                        .min(line_count);
+                } else if count_signed < 0 {
+                    self.screen.viewport.top_line = self
+                        .screen
+                        .viewport
+                        .top_line
+                        .saturating_sub((-count_signed) as usize);
+                }
+                None // dot does not move
+            }
+            // WH (WindowSetHeight) and WU (WindowUpdate): no-op here.
+            // The app calls fixup after every command, so the screen is always refreshed.
             _ => None,
         }
     }

@@ -10,6 +10,7 @@ use crate::exec_context::{ExecutionContext, MAX_RECURSION_DEPTH, parse_span_name
 use crate::frame::{
     CaseMode, EditCommands, MotionCommands, PredicateCommands, SearchCommands, WordCommands,
 };
+use crate::marks::MarkId;
 use crate::frame_set::COMMAND_FRAME_NAME;
 use crate::{CmdFailure, CmdResult, LeadParam, TrailParam, compile};
 
@@ -41,6 +42,7 @@ fn execute_instruction(ctx: &mut ExecutionContext, instr: &Instruction) -> ExecO
                 CmdOp::SpanExecute => execute_span(ctx, *lead, tpars, true),
                 CmdOp::SpanExecuteNoRecompile => execute_span(ctx, *lead, tpars, false),
                 CmdOp::FileExecute => execute_file_execute(ctx, *lead, tpars),
+                CmdOp::ExecuteString => execute_cmd_string(ctx, *lead, tpars),
                 _ => {
                     let result = dispatch_cmd(ctx, *op, *lead, tpars);
                     if result.is_success() {
@@ -331,6 +333,21 @@ fn dispatch_cmd(
         CmdOp::LineRight => ctx.current_frame_mut().cmd_line_right(lead),
         CmdOp::DittoUp => ctx.current_frame_mut().cmd_ditto_up(lead),
         CmdOp::DittoDown => ctx.current_frame_mut().cmd_ditto_down(lead),
+        CmdOp::Tab => ctx.current_frame_mut().cmd_tab(lead),
+        CmdOp::Backtab => ctx.current_frame_mut().cmd_backtab(lead),
+        // ZH: move to home position.  The screen backend resolves the target
+        // position (top-left of viewport in interactive mode; (0,0) in batch).
+        CmdOp::Home => {
+            let dot = ctx.current_frame().dot();
+            let line_count = ctx.current_frame().line_count();
+            let new_dot = ctx
+                .screen
+                .handle_window_cmd(op, lead, dot, line_count)
+                .unwrap_or(Position::new(0, 0));
+            ctx.current_frame_mut().set_mark_at(MarkId::Equals, dot);
+            ctx.current_frame_mut().set_dot(new_dot);
+            CmdResult::Success
+        }
         // Window commands are dispatched to the screen backend.
         // In batch mode the backend is a no-op; in interactive mode it updates
         // the viewport (and may return a new dot position for WF/WB).
@@ -341,12 +358,66 @@ fn dispatch_cmd(
         | CmdOp::WindowTop
         | CmdOp::WindowEnd
         | CmdOp::WindowNew
-        | CmdOp::WindowMiddle => {
+        | CmdOp::WindowMiddle
+        | CmdOp::WindowScroll
+        | CmdOp::WindowSetHeight
+        | CmdOp::WindowUpdate => {
             let dot = ctx.current_frame().dot();
             let line_count = ctx.current_frame().line_count();
             if let Some(new_dot) = ctx.screen.handle_window_cmd(op, lead, dot, line_count) {
                 ctx.current_frame_mut().set_dot(new_dot);
             }
+            CmdResult::Success
+        }
+        // V — Verify: always succeed in batch mode.
+        // In interactive mode a prompt + Y/N/A/Q dialog would be shown.
+        CmdOp::Verify => CmdResult::Success,
+        // ? — InsertInvisible: not meaningful in batch mode.
+        CmdOp::InsertInvisible => CmdResult::Failure(CmdFailure::NotImplemented),
+        // UC — insert the command introducer character (\) as literal text.
+        CmdOp::UserCommandIntroducer => {
+            let tpar = TrailParam::from_str("\\");
+            ctx.current_frame_mut().cmd_insert_text(LeadParam::None, &tpar)
+        }
+        // Q — Quit: signal the application to exit after this execution.
+        CmdOp::Quit => {
+            ctx.frame_set.quit_requested = true;
+            CmdResult::Success
+        }
+        // UK — bind a key name to a procedure.
+        //
+        // Single-character key names are stored case-sensitively so that 'a'
+        // and 'A' (Shift+A) can have independent bindings.  Multi-character
+        // named keys (e.g. "UP-ARROW", "F1") are normalised to UPPERCASE so
+        // that `UK|up-arrow|…|` matches the "UP-ARROW" name returned by
+        // `key_event_to_name`.
+        CmdOp::UserKey => {
+            let raw = tpars[0].content.trim();
+            let key_name = if raw.chars().count() == 1 {
+                raw.to_string()
+            } else {
+                raw.to_uppercase()
+            };
+            if key_name.is_empty() {
+                return CmdResult::Failure(CmdFailure::SyntaxError);
+            }
+            let procedure = tpars[1].content.trim();
+            match compile(procedure) {
+                Ok(code) => {
+                    ctx.frame_set.user_key_bindings.insert(key_name, code);
+                    CmdResult::Success
+                }
+                Err(_) => CmdResult::Failure(CmdFailure::SyntaxError),
+            }
+        }
+        // UP — suspend to parent shell (interactive-only).
+        CmdOp::UserParent => {
+            ctx.frame_set.suspend_requested = true;
+            CmdResult::Success
+        }
+        // US — spawn a subprocess shell (interactive-only).
+        CmdOp::UserSubprocess => {
+            ctx.frame_set.subprocess_requested = true;
             CmdResult::Success
         }
         // Span commands
@@ -426,6 +497,44 @@ fn execute_file_execute(
     }
 
     // Execute compiled code against the current (data) frame — no frame switch.
+    ctx.recursion_depth += 1;
+    let outcome = execute(ctx, &code);
+    let outcome = unwrap_exit_level(outcome);
+    ctx.recursion_depth -= 1;
+
+    outcome
+}
+
+/// ^ — Execute String
+///
+/// Compiles the trailing-param text as Ludwig commands and executes it against
+/// the current frame.  Acts as a compound-command boundary for exit-level
+/// propagation (same as EX/EN).  Returns `Failure` if the text does not
+/// compile or the recursion limit is reached.
+fn execute_cmd_string(
+    ctx: &mut ExecutionContext,
+    lead: LeadParam,
+    tpars: &[TrailParam],
+) -> ExecOutcome {
+    if !matches!(lead, LeadParam::None | LeadParam::Plus) {
+        return ExecOutcome::Failure;
+    }
+
+    // Guard recursion depth.
+    if ctx.recursion_depth >= MAX_RECURSION_DEPTH {
+        return ExecOutcome::Failure;
+    }
+
+    let text = tpars[0].content.trim().to_string();
+    if text.is_empty() {
+        return ExecOutcome::Success;
+    }
+
+    let code = match compile(&text) {
+        Ok(c) => c,
+        Err(_) => return ExecOutcome::Failure,
+    };
+
     ctx.recursion_depth += 1;
     let outcome = execute(ctx, &code);
     let outcome = unwrap_exit_level(outcome);
@@ -1037,5 +1146,241 @@ mod tests {
     fn test_pattern_syntax_error() {
         let (_, outcome) = exec("hello\n", "G`(A`");
         assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    // ─── Phase 10 tests ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_zh_home_in_batch() {
+        // In batch mode ZH moves to (0, 0).
+        let (frame_set, outcome) = exec("hello\n", "5J ZH");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot(), Position::new(0, 0));
+    }
+
+    #[test]
+    fn test_zh_sets_equals_mark() {
+        let (frame_set, outcome) = exec("hello\n", "3J ZH");
+        assert_eq!(outcome, ExecOutcome::Success);
+        // Equals mark should be the position before ZH
+        assert_eq!(
+            frame_set.current_frame().get_mark(MarkId::Equals),
+            Some(Position::new(0, 3))
+        );
+    }
+
+    #[test]
+    fn test_zt_tab_forward() {
+        // Default tab stops at every 8 columns: 0, 8, 16, …
+        let (frame_set, outcome) = exec("hello\n", "ZT");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot(), Position::new(0, 8));
+    }
+
+    #[test]
+    fn test_zt_tab_forward_from_middle() {
+        let (frame_set, outcome) = exec("hello\n", "3J ZT");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot(), Position::new(0, 8));
+    }
+
+    #[test]
+    fn test_zt_tab_multiple() {
+        let (frame_set, outcome) = exec("hello\n", "2ZT");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot(), Position::new(0, 16));
+    }
+
+    #[test]
+    fn test_zt_sets_equals_mark() {
+        let (frame_set, outcome) = exec("hello\n", "3J ZT");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(
+            frame_set.current_frame().get_mark(MarkId::Equals),
+            Some(Position::new(0, 3))
+        );
+    }
+
+    #[test]
+    fn test_zb_backtab_backward() {
+        // From column 8, backtab goes to column 0.
+        let (frame_set, outcome) = exec("hello\n", "8J ZB");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot(), Position::new(0, 0));
+    }
+
+    #[test]
+    fn test_zb_backtab_from_middle() {
+        // From column 5, backtab goes to column 0 (first tab stop).
+        let (frame_set, outcome) = exec("hello\n", "5J ZB");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot(), Position::new(0, 0));
+    }
+
+    #[test]
+    fn test_zb_fails_at_column_zero() {
+        let (_, outcome) = exec("hello\n", "ZB");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_zb_sets_equals_mark() {
+        let (frame_set, outcome) = exec("hello\n", "8J ZB");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(
+            frame_set.current_frame().get_mark(MarkId::Equals),
+            Some(Position::new(0, 8))
+        );
+    }
+
+    #[test]
+    fn test_zt_zb_roundtrip() {
+        // Tab from a tab stop then backtab should return to that stop.
+        // Default tab stops: 0, 8, 16, …  From col 8: ZT → 16, ZB → 8.
+        let (frame_set, outcome) = exec("hello\n", "8J ZT ZB");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot(), Position::new(0, 8));
+    }
+
+    #[test]
+    fn test_tab_hits_right_margin() {
+        // EP sets right margin to 10; ZT from col 5 stops at col 10.
+        let (frame_set, outcome) = exec("hello world\n", "EP'M=(1,11)' 5J ZT");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot(), Position::new(0, 8));
+    }
+
+    #[test]
+    fn test_v_succeeds_in_batch() {
+        let (_, outcome) = exec("hello\n", "V/prompt/");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_q_sets_quit_flag() {
+        let mut frame_set = FrameSet::from_str("hello\n");
+        let code = compile("Q").unwrap();
+        frame_set.execute(&code);
+        assert!(frame_set.quit_requested);
+    }
+
+    #[test]
+    fn test_uc_inserts_backslash() {
+        let (frame_set, outcome) = exec("hello\n", "UC");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.to_string(), "\\hello\n");
+    }
+
+    #[test]
+    fn test_execute_string_runs_commands() {
+        // ^ compiles and runs its tpar text.
+        let (frame_set, outcome) = exec("hello\n", "^/5J I|!|/");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.to_string(), "hello!\n");
+    }
+
+    #[test]
+    fn test_execute_string_empty_succeeds() {
+        let (_, outcome) = exec("hello\n", "^//");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_execute_string_bad_code_fails() {
+        let (_, outcome) = exec("hello\n", "^/ZZZZZ/");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_execute_string_respects_exit_handler() {
+        // ^ treats XS/XF exit levels like a compound boundary.
+        let (frame_set, outcome) = exec("hello\n", "^/XS/ [I/yes/: I/no/]");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.to_string(), "yeshello\n");
+    }
+
+    #[test]
+    fn test_ws_noop_in_batch() {
+        // WS (window scroll) is a no-op in batch mode.
+        let (frame_set, outcome) = exec("hello\n", "WS");
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot(), Position::new(0, 0));
+    }
+
+    #[test]
+    fn test_wh_noop_in_batch() {
+        let (_, outcome) = exec("hello\n", "WH");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    #[test]
+    fn test_wu_noop_in_batch() {
+        let (_, outcome) = exec("hello\n", "WU");
+        assert_eq!(outcome, ExecOutcome::Success);
+    }
+
+    // ─── Phase 11 tests ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_uk_binds_key_and_executes() {
+        // UK binds a key name to a procedure; verify the binding is stored.
+        let mut frame_set = FrameSet::from_str("hello\n");
+        let code = compile("UK|UP-ARROW|ZU|").unwrap();
+        frame_set.execute(&code);
+        assert!(frame_set.user_key_bindings.contains_key("UP-ARROW"));
+    }
+
+    #[test]
+    fn test_uk_binding_is_compiled() {
+        // After UK, the stored code is the compiled procedure.
+        let mut frame_set = FrameSet::from_str("hello\n");
+        let code = compile("UK|a|3J|").unwrap();
+        frame_set.execute(&code);
+        // Execute the stored binding directly.
+        let binding = frame_set.user_key_bindings["a"].clone();
+        let outcome = frame_set.execute(&binding);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot().column, 3);
+    }
+
+    #[test]
+    fn test_uk_rebinds_key() {
+        // UK can replace an existing binding.
+        let mut frame_set = FrameSet::from_str("hello\n");
+        let code = compile("UK|a|3J| UK|a|5J|").unwrap();
+        frame_set.execute(&code);
+        let binding = frame_set.user_key_bindings["a"].clone();
+        let outcome = frame_set.execute(&binding);
+        assert_eq!(outcome, ExecOutcome::Success);
+        assert_eq!(frame_set.current_frame().dot().column, 5);
+    }
+
+    #[test]
+    fn test_uk_empty_key_name_fails() {
+        let (_, outcome) = exec("hello\n", "UK||proc|");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_uk_bad_procedure_fails() {
+        // Invalid procedure text → compile error → Failure.
+        let (_, outcome) = exec("hello\n", "UK|a|ZZZZZ|");
+        assert_eq!(outcome, ExecOutcome::Failure);
+    }
+
+    #[test]
+    fn test_up_sets_suspend_flag() {
+        let mut frame_set = FrameSet::from_str("hello\n");
+        let code = compile("UP").unwrap();
+        frame_set.execute(&code);
+        assert!(frame_set.suspend_requested);
+    }
+
+    #[test]
+    fn test_us_sets_subprocess_flag() {
+        let mut frame_set = FrameSet::from_str("hello\n");
+        let code = compile("US").unwrap();
+        frame_set.execute(&code);
+        assert!(frame_set.subprocess_requested);
     }
 }

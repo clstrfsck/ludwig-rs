@@ -757,6 +757,78 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
         tpar_count: 0
     },
+    // Phase 10: Interactive enhancements
+    "?" => CmdInfo {
+        op: CmdOp::InsertInvisible,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
+        tpar_count: 0
+    },
+    "^" => CmdInfo {
+        op: CmdOp::ExecuteString,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 1
+    },
+    "q" => CmdInfo {
+        op: CmdOp::Quit,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "uc" => CmdInfo {
+        op: CmdOp::UserCommandIntroducer,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "v" => CmdInfo {
+        op: CmdOp::Verify,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 1
+    },
+    "wh" => CmdInfo {
+        op: CmdOp::WindowSetHeight,
+        allowed_leads: lead_param_mask!(None, Plus, Pint),
+        tpar_count: 0
+    },
+    "ws" => CmdInfo {
+        op: CmdOp::WindowScroll,
+        allowed_leads: lead_param_mask!(None, Plus, Pint, Nint, Pindef, Nindef),
+        tpar_count: 0
+    },
+    "wu" => CmdInfo {
+        op: CmdOp::WindowUpdate,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "zb" => CmdInfo {
+        op: CmdOp::Backtab,
+        allowed_leads: lead_param_mask!(None, Plus, Pint),
+        tpar_count: 0
+    },
+    "zh" => CmdInfo {
+        op: CmdOp::Home,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "zt" => CmdInfo {
+        op: CmdOp::Tab,
+        allowed_leads: lead_param_mask!(None, Plus, Pint),
+        tpar_count: 0
+    },
+    // Phase 11: User commands
+    "uk" => CmdInfo {
+        op: CmdOp::UserKey,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 2
+    },
+    "up" => CmdInfo {
+        op: CmdOp::UserParent,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
+    "us" => CmdInfo {
+        op: CmdOp::UserSubprocess,
+        allowed_leads: lead_param_mask!(None),
+        tpar_count: 0
+    },
 };
 
 /// Map a command name string to its CmdInfo.
@@ -768,7 +840,7 @@ fn name_to_info(name: &str) -> Result<&'static CmdInfo> {
 
 /// Check if a character is valid in a command name.
 fn is_command_char(ch: char) -> bool {
-    matches!(ch, '\\' | '"' | '\'' | '*' | '{' | '}' | '?') || ch.is_ascii_alphabetic()
+    matches!(ch, '\\' | '"' | '\'' | '*' | '{' | '}' | '?' | '^') || ch.is_ascii_alphabetic()
 }
 
 #[cfg(test)]

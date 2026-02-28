@@ -87,6 +87,40 @@ pub enum PromptAction {
     Ignore,
 }
 
+/// Convert a `KeyEvent` to a canonical key name string for UK user-key bindings.
+///
+/// Returns `None` for events that cannot be named (e.g. unknown modifiers).
+/// Single printable characters map to themselves (as a one-char string); all
+/// other keys use human-readable names like `"UP-ARROW"`, `"F1"`, etc.
+pub fn key_event_to_name(key: KeyEvent) -> Option<String> {
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        if let KeyCode::Char(ch) = key.code {
+            return Some(format!("CTRL-{}", ch.to_ascii_uppercase()));
+        }
+        return None;
+    }
+    match key.code {
+        KeyCode::Char(ch) => Some(ch.to_string()),
+        KeyCode::Up => Some("UP-ARROW".to_string()),
+        KeyCode::Down => Some("DOWN-ARROW".to_string()),
+        KeyCode::Left => Some("LEFT-ARROW".to_string()),
+        KeyCode::Right => Some("RIGHT-ARROW".to_string()),
+        KeyCode::Home => Some("HOME".to_string()),
+        KeyCode::End => Some("END".to_string()),
+        KeyCode::PageUp => Some("PAGE-UP".to_string()),
+        KeyCode::PageDown => Some("PAGE-DOWN".to_string()),
+        KeyCode::Backspace => Some("BACKSPACE".to_string()),
+        KeyCode::Delete => Some("DELETE".to_string()),
+        KeyCode::Insert => Some("INSERT".to_string()),
+        KeyCode::Tab => Some("TAB".to_string()),
+        KeyCode::BackTab => Some("BACK-TAB".to_string()),
+        KeyCode::Enter => Some("RETURN".to_string()),
+        KeyCode::Esc => Some("ESCAPE".to_string()),
+        KeyCode::F(n) => Some(format!("F{}", n)),
+        _ => None,
+    }
+}
+
 /// Resolve a `KeyEvent` to a [`PromptAction`] for use inside the command-input prompt.
 pub fn resolve_prompt_key(key: KeyEvent) -> PromptAction {
     match key.code {
