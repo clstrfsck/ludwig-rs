@@ -82,9 +82,16 @@ impl MotionCommands for Frame {
                 CmdResult::Success
             }
             LeadParam::Pindef => {
-                // Go to column 0 (left margin)
-                self.set_mark_at(MarkId::Equals, dot);
-                self.set_dot(Position::new(dot.line, 0));
+                // Go to left margin
+                let dot = self.dot();
+                if dot.column < self.left_margin {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                if dot.column > self.left_margin {
+                    // Only set mark if we're actually moving
+                    self.set_mark_at(MarkId::Equals, dot);
+                    self.set_dot(Position::new(dot.line, self.left_margin));
+                }
                 CmdResult::Success
             }
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
@@ -105,10 +112,15 @@ impl MotionCommands for Frame {
                 CmdResult::Success
             }
             LeadParam::Pindef => {
-                // Go to end of line (right margin)
-                let line_len = self.line_length_excluding_newline(dot.line);
-                self.set_mark_at(MarkId::Equals, dot);
-                self.set_dot(Position::new(dot.line, line_len));
+                // Go to right margin
+                if dot.column >= self.right_margin {
+                    return CmdResult::Failure(CmdFailure::OutOfRange);
+                }
+                if dot.column + 1 < self.right_margin {
+                    // Only set mark if we're actually moving
+                    self.set_mark_at(MarkId::Equals, dot);
+                    self.set_dot(Position::new(dot.line, self.right_margin.saturating_sub(1)));
+                }
                 CmdResult::Success
             }
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
@@ -176,7 +188,7 @@ impl MotionCommands for Frame {
     }
 
     fn cmd_return(&mut self, lead_param: LeadParam) -> CmdResult {
-        // ZC: Advance n lines, go to left margin (column 0).
+        // ZC: Advance n lines, go to left margin.
         // When on the last line, inserts a newline to extend the buffer.
         match lead_param {
             LeadParam::None | LeadParam::Plus => self.return_fwd(1),
@@ -284,9 +296,24 @@ impl Frame {
             );
         }
 
+        let dot_col = if self.options.auto_indent {
+            self.line_indent(old_pos.line)
+        } else {
+            self.left_margin
+        };
+
         self.set_mark_at(MarkId::Equals, old_pos);
-        self.set_dot(Position::new(new_line, 0));
+        self.set_dot(Position::new(new_line, dot_col));
         CmdResult::Success
+    }
+
+    fn line_indent(&self, line_number: usize) -> usize {
+        let line = self.rope.line(line_number);
+        if let Some(pos) = line.chars().position(|ch| !ch.is_whitespace()) {
+            pos
+        } else {
+            self.left_margin
+        }
     }
 
     fn advance_back(&mut self, count: usize) -> CmdResult {

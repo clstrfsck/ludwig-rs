@@ -242,6 +242,11 @@ impl FrameSet {
         self.spans.sorted_names()
     }
 
+    /// Get a list of all frame names, sorted case-insensitively.
+    pub fn sorted_frame_names(&self) -> Vec<&str> {
+        self.frames.sorted_names()
+    }
+
     /// Allocate two fresh `SpanBound` mark IDs. IDs are monotone and never reused.
     ///
     /// The returned `MarkId::SpanBound` values are NOT yet placed in the `MarkSet`;
