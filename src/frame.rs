@@ -102,7 +102,7 @@ impl Frame {
             marks: MarkSet::new(),
             code: None,
             left_margin: 0,
-            right_margin: 79,
+            right_margin: 80,
             return_frame_name: None,
             options: FrameOptions::default(),
             tab_stops: default_tab_stops(),
@@ -125,7 +125,7 @@ impl Frame {
             marks: MarkSet::new(),
             code: None,
             left_margin: 0,
-            right_margin: 79,
+            right_margin: 80,
             return_frame_name: None,
             options: FrameOptions::default(),
             tab_stops: default_tab_stops(),
@@ -531,6 +531,12 @@ impl FrameRegistry {
     /// Return all frame names (for iteration, e.g. fixing return pointers).
     pub fn names(&self) -> Vec<String> {
         self.frames.keys().cloned().collect()
+    }
+
+    pub fn sorted_names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self.frames.keys().map(|s| s.as_str()).collect();
+        names.sort();
+        names
     }
 }
 

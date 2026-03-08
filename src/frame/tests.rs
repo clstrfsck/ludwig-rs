@@ -1464,12 +1464,12 @@ fn zr_into_virtual_space() {
 }
 
 #[test]
-fn zr_pindef_goes_to_eol() {
+fn zr_pindef_goes_to_margin() {
     let mut f = Frame::from_str(TEST_FRAME_NAME, "hello");
     f.set_dot(Position::new(0, 1));
     let result = f.cmd_right(LeadParam::Pindef);
     assert!(result.is_success());
-    assert_eq!(f.dot(), Position::new(0, 5));
+    assert_eq!(f.dot(), Position::new(0, 79));
 }
 
 #[test]

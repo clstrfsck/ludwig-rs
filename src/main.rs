@@ -94,10 +94,14 @@ fn run_batch(maybe_path: Option<String>) {
     let mut output = Vec::<String>::new();
 
     let file_contents = if let Some(path) = maybe_path.as_ref() {
-        let file_contents = fs::read_to_string(path).unwrap_or_else(|err| {
-            eprintln!("Failed to read {}: {}", path, err);
-            std::process::exit(1);
-        });
+        let file_contents = if std::path::Path::new(path).exists() {
+            fs::read_to_string(path).unwrap_or_else(|err| {
+                eprintln!("Failed to read {}: {}", path, err);
+                std::process::exit(1);
+            })
+        } else {
+            String::new()
+        };
         output.push(format!(
             "{} closed ({} line{} read).",
             path,
