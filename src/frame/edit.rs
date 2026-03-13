@@ -83,7 +83,9 @@ impl EditCommands for Frame {
             LeadParam::None | LeadParam::Plus => self.cmd_del_forward(1),
             LeadParam::Pint(n) => self.cmd_del_forward(n),
             LeadParam::Pindef => {
-                self.cmd_del_forward(self.line_length_excluding_newline(self.dot().line))
+                let dot = self.dot();
+                let line_len = self.line_length_excluding_newline(dot.line);
+                self.cmd_del_forward(line_len.saturating_sub(dot.column))
             }
             LeadParam::Minus => self.cmd_del_backward(1),
             LeadParam::Nint(n) => self.cmd_del_backward(n),

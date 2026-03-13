@@ -10,8 +10,8 @@ use crate::exec_context::{ExecutionContext, MAX_RECURSION_DEPTH, parse_span_name
 use crate::frame::{
     CaseMode, EditCommands, MotionCommands, PredicateCommands, SearchCommands, WordCommands,
 };
-use crate::marks::MarkId;
 use crate::frame_set::COMMAND_FRAME_NAME;
+use crate::marks::MarkId;
 use crate::{CmdFailure, CmdResult, LeadParam, TrailParam, compile};
 
 /// Execute compiled code against an execution context. Top-level entry point.
@@ -377,7 +377,8 @@ fn dispatch_cmd(
         // UC — insert the command introducer character (\) as literal text.
         CmdOp::UserCommandIntroducer => {
             let tpar = TrailParam::from_str("\\");
-            ctx.current_frame_mut().cmd_insert_text(LeadParam::None, &tpar)
+            ctx.current_frame_mut()
+                .cmd_insert_text(LeadParam::None, &tpar)
         }
         // Q — Quit: signal the application to exit after this execution.
         CmdOp::Quit => {
@@ -1148,8 +1149,6 @@ mod tests {
         assert_eq!(outcome, ExecOutcome::Failure);
     }
 
-    // ─── Phase 10 tests ───────────────────────────────────────────────────────
-
     #[test]
     fn test_zh_home_in_batch() {
         // In batch mode ZH moves to (0, 0).
@@ -1318,8 +1317,6 @@ mod tests {
         let (_, outcome) = exec("hello\n", "WU");
         assert_eq!(outcome, ExecOutcome::Success);
     }
-
-    // ─── Phase 11 tests ───────────────────────────────────────────────────────
 
     #[test]
     fn test_uk_binds_key_and_executes() {

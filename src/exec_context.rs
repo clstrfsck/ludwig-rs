@@ -2,7 +2,7 @@
 //!
 //! This is the main "environment" passed through the interpreter.
 //! Using a context type (rather than a bare `&mut Frame`) lets span commands
-//! reach across frames and lets future phases (Phase 7) track recursion depth.
+//! reach across frames and lets us track recursion depth.
 
 use crate::file_io;
 use crate::frame::Frame;
@@ -364,7 +364,6 @@ impl<'a> ExecutionContext<'a> {
     /// SI — Span Index
     ///
     /// Prints a listing of all spans and frames to stdout.
-    /// (Interactive display deferred to Phase 10.)
     pub(crate) fn cmd_span_index(&mut self) -> CmdResult {
         let names = self.frame_set.sorted_span_names();
         for name in names {

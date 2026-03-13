@@ -757,7 +757,6 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Minus, Pint, Nint, Pindef, Nindef),
         tpar_count: 0
     },
-    // Phase 10: Interactive enhancements
     "?" => CmdInfo {
         op: CmdOp::InsertInvisible,
         allowed_leads: lead_param_mask!(None, Plus, Pint, Pindef),
@@ -813,7 +812,6 @@ const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
         allowed_leads: lead_param_mask!(None, Plus, Pint),
         tpar_count: 0
     },
-    // Phase 11: User commands
     "uk" => CmdInfo {
         op: CmdOp::UserKey,
         allowed_leads: lead_param_mask!(None),

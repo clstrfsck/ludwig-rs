@@ -406,8 +406,6 @@ mod tests {
 
     // Pattern-command execution tests moved to `interpreter::tests`.
 
-    // ─── Phase 7: Word formatting commands (YF, YJ, YC, YL, YR) ──────────────
-
     /// Helper: compile+execute with explicit left/right margins.
     fn exec_with_margins(
         content: &str,
@@ -1024,7 +1022,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Phase 9: File I/O command tests
+    // File I/O command tests
     // -----------------------------------------------------------------------
 
     #[cfg(test)]
