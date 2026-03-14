@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 
 use crate::cmd_result::{CmdFailure, CmdResult};
 use crate::lead_param::LeadParam;
-use crate::marks::MarkId;
+use crate::marks::{MarkId, NUMBERED_MARK_RANGE};
 use crate::position::Position;
 use crate::trail_param::TrailParam;
 
@@ -85,9 +85,8 @@ impl PredicateCommands for Frame {
     }
 
     fn cmd_eqc(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
-        let target_col = match parse_column_tpar(tpar) {
-            Some(c) => c,
-            None => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Some(target_col) = parse_column_tpar(tpar) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
         let dot_col = self.dot().column;
         let result = match lead_param {
@@ -101,13 +100,11 @@ impl PredicateCommands for Frame {
     }
 
     fn cmd_eqm(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
-        let mark_id = match parse_mark_tpar(tpar) {
-            Some(id) => id,
-            None => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Some(mark_id) = parse_mark_tpar(tpar) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
-        let mark_pos = match self.get_mark(mark_id) {
-            Some(pos) => pos,
-            None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
+        let Some(mark_pos) = self.get_mark(mark_id) else {
+            return CmdResult::Failure(CmdFailure::MarkNotDefined);
         };
         let dot = self.dot();
         let result = match lead_param {
@@ -147,12 +144,11 @@ impl PredicateCommands for Frame {
             }
             LeadParam::Pint(n) => {
                 // NM — set mark N at dot
-                let n = n as u8;
-                if !(1..=9).contains(&n) {
-                    return CmdResult::Failure(CmdFailure::SyntaxError);
+                if let Ok(n8) = u8::try_from(n) && NUMBERED_MARK_RANGE.contains(&n8) {
+                    self.set_mark_at(MarkId::Numbered(n8), self.dot());
+                    return CmdResult::Success;
                 }
-                self.set_mark_at(MarkId::Numbered(n), self.dot());
-                CmdResult::Success
+                return CmdResult::Failure(CmdFailure::SyntaxError);
             }
             LeadParam::Minus => {
                 // -M — unset mark 1
@@ -160,13 +156,12 @@ impl PredicateCommands for Frame {
                 CmdResult::Success
             }
             LeadParam::Nint(n) => {
-                // -NM — unset mark N
-                let n = n as u8;
-                if !(1..=9).contains(&n) {
-                    return CmdResult::Failure(CmdFailure::SyntaxError);
+                // -nM — unset mark n
+                if let Ok(n8) = u8::try_from(n) && NUMBERED_MARK_RANGE.contains(&n8) {
+                    self.unset_mark(MarkId::Numbered(n8));
+                    return CmdResult::Success
                 }
-                self.unset_mark(MarkId::Numbered(n));
-                CmdResult::Success
+                return CmdResult::Failure(CmdFailure::SyntaxError);
             }
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
         }
@@ -176,15 +171,13 @@ impl PredicateCommands for Frame {
 impl Frame {
     /// EQS command via pattern (backtick delimiter).
     fn cmd_eqs_pattern(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
-        let pattern = match crate::pattern::parse(&tpar.content) {
-            Ok(p) => p,
-            Err(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Ok(pattern) = crate::pattern::parse(&tpar.content) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
 
         let dot = self.dot();
-        let ctx = match self.make_match_ctx(dot.line) {
-            Some(c) => c,
-            None => return CmdResult::Failure(CmdFailure::OutOfRange),
+        let Some(ctx) = self.make_match_ctx(dot.line) else {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
         };
 
         let matches = crate::pattern::match_at(&pattern, &ctx, dot.column).is_some();
@@ -216,14 +209,13 @@ impl Frame {
         for (i, pattern_ch) in pattern.chars().enumerate() {
             let ach = line_start
                 .and_then(|line_start| self.rope.get_char(line_start + pos.column + i))
-                .map(|c| {
+                .map_or(' ', |c| {
                     if case_sensitive {
                         c
                     } else {
                         c.to_ascii_lowercase()
                     }
-                })
-                .unwrap_or(' ');
+                });
             let pch = if case_sensitive {
                 pattern_ch
             } else {
@@ -239,7 +231,7 @@ impl Frame {
     }
 }
 
-/// Convert a boolean condition to a CmdResult.
+/// Convert a boolean condition to a `CmdResult`.
 fn bool_result(condition: bool) -> CmdResult {
     if condition {
         CmdResult::Success

@@ -3,7 +3,7 @@
 //! Parses strings of the form `K=I`, `M=(5,75)`, `O=(I,W)`, `T=D`, etc.
 //! and returns a list of [`EpDirective`]s for the caller to apply.
 
-/// The maximum valid column number (1-based user input), matching MAX_STRLEN.
+/// The maximum valid column number (1-based user input), matching `MAX_STRLEN`.
 pub(crate) const MAX_COL: usize = 400;
 
 /// A single parsed EP directive, ready to apply to a frame + context.

@@ -70,7 +70,7 @@ pub struct Frame {
     pub return_frame_name: Option<String>,
     /// Option flags (auto-indent, auto-wrap, newline).
     pub options: FrameOptions,
-    /// Tab-stop bitmap, indexed by 0-based column (len = TAB_STOPS_LEN).
+    /// Tab-stop bitmap, indexed by 0-based column (len = `TAB_STOPS_LEN`).
     pub tab_stops: Vec<bool>,
     /// Top scroll margin (rows from top of screen, default 0).
     pub margin_top: usize,
@@ -160,12 +160,12 @@ impl Frame {
 
     /// Create a new mark at the current dot position
     fn set_mark(&mut self, id: MarkId) {
-        self.marks.set(id, self.dot())
+        self.marks.set(id, self.dot());
     }
 
     /// Set a mark at a specific position
     pub fn set_mark_at(&mut self, id: MarkId, pos: Position) {
-        self.marks.set(id, pos)
+        self.marks.set(id, pos);
     }
 
     /// Unset a mark
@@ -190,12 +190,12 @@ impl Frame {
 
     /// Set the compiled code for the frame
     pub fn set_code(&mut self, code: CompiledCode) {
-        self.code = Some(code)
+        self.code = Some(code);
     }
 
     /// Unset the compiled code for the frame
     pub fn clear_code(&mut self) {
-        self.code = None
+        self.code = None;
     }
 
     /// Get the number of lines in the frame
@@ -206,8 +206,8 @@ impl Frame {
         self.rope.len_lines()
     }
 
-    /// Get the content of a line as a RopeSlice, including the trailing newline.
-    /// Returns None if the line index is out of range.
+    /// Get the content of a line as a `RopeSlice`, including the trailing newline.
+    /// Returns `None` if the line index is out of range.
     pub fn line_content(&self, line: usize) -> Option<ropey::RopeSlice<'_>> {
         if line >= self.line_count() {
             return None;
@@ -236,7 +236,7 @@ impl Frame {
         if line >= self.line_count() {
             return true;
         }
-        self.rope.line(line).chars().all(|ch| ch.is_whitespace())
+        self.rope.line(line).chars().all(char::is_whitespace)
     }
 
     /// Get a slice of the underlying data.
@@ -458,7 +458,7 @@ impl Frame {
     }
 }
 
-/// Calculate the effect of inserting text: (lines_added, end_column)
+/// Calculate the effect of inserting text: `(lines_added, end_column)`.
 ///
 /// Uses Rope to handle multi-line text correctly.
 fn calculate_insert_effect(text: &str) -> (usize, usize) {
@@ -536,8 +536,8 @@ impl FrameRegistry {
     }
 
     pub fn sorted_names(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self.frames.keys().map(|s| s.as_str()).collect();
-        names.sort();
+        let mut names: Vec<&str> = self.frames.keys().map(String::as_str).collect();
+        names.sort_unstable();
         names
     }
 }

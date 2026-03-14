@@ -39,12 +39,12 @@ impl Span {
 
     /// Set the compiled code for the span
     pub fn set_code(&mut self, code: CompiledCode) {
-        self.code = Some(code)
+        self.code = Some(code);
     }
 
     /// Unset the compiled code for the span
     pub fn clear_code(&mut self) {
-        self.code = None
+        self.code = None;
     }
 }
 
@@ -93,8 +93,8 @@ impl SpanRegistry {
 
     /// Return all span names in alphabetical order
     pub(crate) fn sorted_names(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self.spans.keys().map(|s| s.as_str()).collect();
-        names.sort();
+        let mut names: Vec<&str> = self.spans.keys().map(String::as_str).collect();
+        names.sort_unstable();
         names
     }
 }

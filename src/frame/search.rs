@@ -10,6 +10,14 @@ use crate::trail_param::TrailParam;
 
 use super::Frame;
 
+fn as_isize_safe(n: usize) -> isize {
+    isize::try_from(n).unwrap_or(isize::MAX)
+}
+
+fn as_usize_safe(n: isize) -> usize {
+    usize::try_from(n).unwrap_or(0)
+}
+
 /// Commands for searching within the frame.
 pub trait SearchCommands {
     /// Next character command (N): find Nth occurrence of a character from a set.
@@ -34,10 +42,10 @@ pub trait SearchCommands {
 impl SearchCommands for Frame {
     fn cmd_next(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
         let count = match lead_param {
-            LeadParam::None | LeadParam::Plus => 1isize,
-            LeadParam::Pint(n) => n as isize,
+            LeadParam::None | LeadParam::Plus => 1,
+            LeadParam::Pint(n) => as_isize_safe(n),
             LeadParam::Minus => -1,
-            LeadParam::Nint(n) => -(n as isize),
+            LeadParam::Nint(n) => -as_isize_safe(n),
             _ => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
         self.nextbridge(count, tpar, false)
@@ -45,7 +53,7 @@ impl SearchCommands for Frame {
 
     fn cmd_bridge(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
         let count = match lead_param {
-            LeadParam::None | LeadParam::Plus => 1isize,
+            LeadParam::None | LeadParam::Plus => 1,
             LeadParam::Minus => -1,
             _ => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
@@ -64,13 +72,13 @@ impl SearchCommands for Frame {
 
         // Determine count and direction
         let (count, replace_all) = match lead_param {
-            LeadParam::None | LeadParam::Plus => (1isize, false),
-            LeadParam::Pint(n) => (n as isize, false),
+            LeadParam::None | LeadParam::Plus => (1, false),
+            LeadParam::Pint(n) => (as_isize_safe(n), false),
             LeadParam::Minus => (-1, false),
-            LeadParam::Nint(n) => (-(n as isize), false),
+            LeadParam::Nint(n) => (-as_isize_safe(n), false),
             LeadParam::Pindef => (1, true), // >R: replace all forward
             LeadParam::Nindef => (-1, true), // <R: replace all backward
-            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+            LeadParam::Marker(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
 
         if search.content.is_empty() {
@@ -108,17 +116,14 @@ impl SearchCommands for Frame {
                 } else {
                     self.find_literal_backward(&search.content, case_sensitive)
                 };
-                match found {
-                    Some((start, end)) => {
-                        self.do_replace(start, end, &replace.content);
-                        replacements += 1;
+                if let Some((start, end)) = found {
+                    self.do_replace(start, end, &replace.content);
+                    replacements += 1;
+                } else {
+                    if replacements == 0 {
+                        return CmdResult::Failure(CmdFailure::OutOfRange);
                     }
-                    None => {
-                        if replacements == 0 {
-                            return CmdResult::Failure(CmdFailure::OutOfRange);
-                        }
-                        break;
-                    }
+                    break;
                 }
             }
         }
@@ -221,7 +226,7 @@ impl Frame {
         let num_lines = self.line_count();
 
         if count > 0 {
-            match self.nextbridge_forward(count as usize, &chars, bridge, num_lines) {
+            match self.nextbridge_forward(as_usize_safe(count), &chars, bridge, num_lines) {
                 Some(pos) => {
                     self.set_mark_at(MarkId::Equals, original_dot);
                     self.set_dot(pos);
@@ -230,7 +235,7 @@ impl Frame {
                 None => CmdResult::Failure(CmdFailure::OutOfRange),
             }
         } else {
-            match self.nextbridge_backward((-count) as usize, &chars, bridge, num_lines) {
+            match self.nextbridge_backward(as_usize_safe(-count), &chars, bridge, num_lines) {
                 Some(pos) => {
                     self.set_mark_at(MarkId::Equals, original_dot);
                     self.set_dot(pos);
@@ -318,20 +323,20 @@ impl Frame {
         // Start column: for both N and BR, start from dot.column - 1.
         // But for bridge, we don't skip an additional char.
         let start_offset: isize = if bridge {
-            dot.column as isize - 1
+            as_isize_safe(dot.column) - 1
         } else {
-            dot.column as isize - 2
+            as_isize_safe(dot.column) - 2
         };
 
         // If start_offset < 0, we need to go to previous line
-        let mut col: isize = start_offset;
+        let mut col = start_offset;
 
         loop {
             if line >= num_lines && line > 0 {
                 // dot was past last line; go to last real line
                 line = num_lines - 1;
                 let line_len = self.line_length_excluding_newline(line);
-                col = line_len as isize; // virtual space at EOL
+                col = as_isize_safe(line_len); // virtual space at EOL
             }
 
             if col < 0 {
@@ -352,31 +357,31 @@ impl Frame {
                 line -= 1;
                 let line_len = self.line_length_excluding_newline(line);
                 // Check virtual space (space at EOL) first
-                col = line_len as isize;
+                col = as_isize_safe(line_len);
             }
 
             let line_len = self.line_length_excluding_newline(line);
             let line_start = self.rope.line_to_char(line);
 
             // Check virtual space at EOL
-            if col as usize > line_len {
+            if as_usize_safe(col) > line_len {
                 if char_matches(' ', chars, bridge) {
                     count -= 1;
                     if count == 0 {
-                        return Some(Position::new(line, col as usize + 1));
+                        return Some(Position::new(line, as_usize_safe(col) + 1));
                     }
                 }
-                col = line_len as isize - 1;
+                col = as_isize_safe(line_len) - 1;
             }
 
             // Scan backward on this line
             while col >= 0 {
-                let ch = self.rope.char(line_start + col as usize);
+                let ch = self.rope.char(line_start + as_usize_safe(col));
                 if char_matches(ch, chars, bridge) {
                     count -= 1;
                     if count == 0 {
                         // Result position is AFTER the found char
-                        return Some(Position::new(line, col as usize + 1));
+                        return Some(Position::new(line, as_usize_safe(col) + 1));
                     }
                 }
                 col -= 1;
@@ -394,7 +399,7 @@ impl Frame {
             }
             line -= 1;
             let prev_line_len = self.line_length_excluding_newline(line);
-            col = prev_line_len as isize - 1;
+            col = as_isize_safe(prev_line_len) - 1;
         }
     }
 }
@@ -402,7 +407,7 @@ impl Frame {
 // Private helpers for Replace command
 impl Frame {
     /// Search forward from dot for a literal string.
-    /// Returns (start_position, end_position) of match.
+    /// Returns `(start_position, end_position)` of match.
     /// Dot is NOT moved by this method — the caller handles positioning.
     fn find_literal_forward(
         &self,
@@ -438,7 +443,7 @@ impl Frame {
     }
 
     /// Search backward from dot for a literal string.
-    /// Returns (end_position, start_position) of match.
+    /// Returns `(end_position, start_position)` of match.
     fn find_literal_backward(
         &self,
         pattern: &str,
@@ -456,14 +461,14 @@ impl Frame {
         let line_len = self.line_length_excluding_newline(line);
         // Start searching from one position before dot (or end of line if dot is beyond)
         let effective_col = dot.column.min(line_len);
-        let mut col = effective_col.saturating_sub(1) as isize;
+        let mut col = as_isize_safe(effective_col.saturating_sub(1));
 
         loop {
             let line_len = self.line_length_excluding_newline(line);
             let line_start = self.rope.line_to_char(line);
 
             while col >= 0 {
-                let c = col as usize;
+                let c = as_usize_safe(col);
                 if c + pat_len <= line_len
                     && self.matches_at_pos(line_start + c, &pat_chars, case_sensitive)
                 {
@@ -477,7 +482,7 @@ impl Frame {
             }
             line -= 1;
             let prev_line_len = self.line_length_excluding_newline(line);
-            col = prev_line_len.saturating_sub(1) as isize;
+            col = as_isize_safe(prev_line_len.saturating_sub(1));
         }
     }
 
@@ -523,9 +528,8 @@ impl Frame {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
 
-        let pattern = match crate::pattern::parse(&tpar.content) {
-            Ok(p) => p,
-            Err(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Ok(pattern) = crate::pattern::parse(&tpar.content) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
 
         for _ in 0..count {
@@ -553,22 +557,21 @@ impl Frame {
         replace: &TrailParam,
     ) -> CmdResult {
         let (count, replace_all) = match lead_param {
-            LeadParam::None | LeadParam::Plus => (1isize, false),
-            LeadParam::Pint(n) => (n as isize, false),
+            LeadParam::None | LeadParam::Plus => (1, false),
+            LeadParam::Pint(n) => (as_isize_safe(n), false),
             LeadParam::Minus => (-1, false),
-            LeadParam::Nint(n) => (-(n as isize), false),
+            LeadParam::Nint(n) => (-as_isize_safe(n), false),
             LeadParam::Pindef => (1, true),
             LeadParam::Nindef => (-1, true),
-            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+            LeadParam::Marker(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
 
         if search.content.is_empty() {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
 
-        let pattern = match crate::pattern::parse(&search.content) {
-            Ok(p) => p,
-            Err(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Ok(pattern) = crate::pattern::parse(&search.content) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
 
         let original_dot = self.dot();
@@ -599,19 +602,16 @@ impl Frame {
                 } else {
                     self.find_pattern_backward(&pattern)
                 };
-                match found {
-                    Some((line, start_col, end_col)) => {
-                        let start = Position::new(line, start_col);
-                        let end = Position::new(line, end_col);
-                        self.do_replace(start, end, &replace.content);
-                        replacements += 1;
+                if let Some((line, start_col, end_col)) = found {
+                    let start = Position::new(line, start_col);
+                    let end = Position::new(line, end_col);
+                    self.do_replace(start, end, &replace.content);
+                    replacements += 1;
+                } else {
+                    if replacements == 0 {
+                        return CmdResult::Failure(CmdFailure::OutOfRange);
                     }
-                    None => {
-                        if replacements == 0 {
-                            return CmdResult::Failure(CmdFailure::OutOfRange);
-                        }
-                        break;
-                    }
+                    break;
                 }
             }
         }

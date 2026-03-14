@@ -4,7 +4,7 @@
 
 use crate::marks::MarkSet;
 
-use super::ast::*;
+use super::ast::{PatternDef, Compound, Item, Quantifier, Element, Positional};
 use super::char_class::charset_matches;
 
 /// Context provided to the matcher for a single line.
@@ -80,7 +80,7 @@ pub fn find_forward(pattern: &PatternDef, ctx: &MatchCtx, start_col: usize) -> O
     None
 }
 
-/// Find the rightmost match where mid_start ≤ `start_col`.
+/// Find the rightmost match where `mid_start` ≤ `start_col`.
 ///
 /// Used by G (backward search).
 pub fn find_backward(
@@ -137,8 +137,7 @@ pub fn match_at(pattern: &PatternDef, ctx: &MatchCtx, col: usize) -> Option<Matc
     if !pattern.left.is_empty_pattern() {
         let left_ok = (0..=col).any(|start| {
             match_compound(&pattern.left, ctx, start, &mut steps)
-                .map(|end| end == col)
-                .unwrap_or(false)
+                .is_some_and(|end| end == col)
         });
         if !left_ok {
             return None;

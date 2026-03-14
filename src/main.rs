@@ -60,7 +60,7 @@ fn main() {
     if interactive {
         run_interactive(maybe_path);
     } else {
-        run_batch(maybe_path);
+        run_batch(maybe_path.as_ref());
     }
 }
 
@@ -68,7 +68,7 @@ fn run_interactive(maybe_path: Option<String>) {
     let file_contents = if let Some(path) = maybe_path.as_ref() {
         if std::path::Path::new(path).exists() {
             fs::read_to_string(path).unwrap_or_else(|err| {
-                eprintln!("Failed to read {}: {}", path, err);
+                eprintln!("Failed to read {path}: {err}");
                 std::process::exit(1);
             })
         } else {
@@ -86,26 +86,25 @@ fn run_interactive(maybe_path: Option<String>) {
     if let Err(e) = app.run(&mut terminal) {
         // Make sure terminal is cleaned up even on error
         let _ = terminal.cleanup();
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {e}");
         std::process::exit(1);
     }
 }
 
-fn run_batch(maybe_path: Option<String>) {
+fn run_batch(maybe_path: Option<&String>) {
     let mut output = Vec::<String>::new();
 
-    let file_contents = if let Some(path) = maybe_path.as_ref() {
+    let file_contents = if let Some(path) = maybe_path {
         let file_contents = if std::path::Path::new(path).exists() {
             fs::read_to_string(path).unwrap_or_else(|err| {
-                eprintln!("Failed to read {}: {}", path, err);
+                eprintln!("Failed to read {path}: {err}");
                 std::process::exit(1);
             })
         } else {
             String::new()
         };
         output.push(format!(
-            "{} closed ({} line{} read).",
-            path,
+            "{path} closed ({} line{} read).",
             file_contents.lines().count(),
             if file_contents.lines().count() == 1 {
                 ""
@@ -122,14 +121,14 @@ fn run_batch(maybe_path: Option<String>) {
     io::stdin()
         .read_to_string(&mut stdin_contents)
         .unwrap_or_else(|err| {
-            eprintln!("Failed to read stdin: {}", err);
+            eprintln!("Failed to read stdin: {err}");
             std::process::exit(1);
         });
 
     let code = compile(&stdin_contents).unwrap_or_else(|err| {
-        println!("{}", err);
+        println!("{err}");
         for line in output.clone() {
-            println!("{}", line);
+            println!("{line}");
         }
         std::process::exit(0);
     });
@@ -146,7 +145,7 @@ fn run_batch(maybe_path: Option<String>) {
     }
 
     for line in output {
-        println!("{}", line);
+        println!("{line}");
     }
     if !failed
         && frame_set.modified()
@@ -156,14 +155,12 @@ fn run_batch(maybe_path: Option<String>) {
         match write_with_backup(&contents, path, 1) {
             Ok(line_count) => {
                 println!(
-                    "{} created ({} line{} written).",
-                    path,
-                    line_count,
+                    "{path} created ({line_count} line{} written).",
                     if line_count == 1 { "" } else { "s" }
                 );
             }
             Err(e) => {
-                eprintln!("Failed to save {}: {}", path, e);
+                eprintln!("Failed to save {path}: {e}");
                 std::process::exit(1);
             }
         }

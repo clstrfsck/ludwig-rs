@@ -83,7 +83,7 @@ fn execute_instruction(ctx: &mut ExecutionContext, instr: &Instruction) -> ExecO
     }
 }
 
-/// Execute a compound command body based on RepeatCount.
+/// Execute a compound command body based on `RepeatCount`.
 fn execute_compound(
     ctx: &mut ExecutionContext,
     repeat: RepeatCount,
@@ -147,10 +147,7 @@ fn apply_exit_handler(
     outcome: ExecOutcome,
     handler: Option<&ExitHandler>,
 ) -> ExecOutcome {
-    let handler = match handler {
-        Some(h) => h,
-        None => return outcome,
-    };
+    let Some(handler) = handler else { return outcome };
 
     match &outcome {
         ExecOutcome::Success => {
@@ -197,10 +194,7 @@ fn execute_span(
     };
 
     // Parse the span name.
-    let span_name = match parse_span_name(&tpars[0]) {
-        Some(n) => n,
-        None => return ExecOutcome::Failure,
-    };
+    let Some(span_name) = parse_span_name(&tpars[0]) else { return ExecOutcome::Failure };
 
     // Recursion guard.
     if ctx.recursion_depth >= MAX_RECURSION_DEPTH {
@@ -212,14 +206,8 @@ fn execute_span(
     // For EN: use cache if present, else read + compile + cache.
     let compiled = if recompile {
         // Read and compile the span/frame text.
-        let text = match ctx.read_span_or_frame_text(&span_name) {
-            Some(t) => t,
-            None => return ExecOutcome::Failure,
-        };
-        let code = match compile(&text) {
-            Ok(c) => c,
-            Err(_) => return ExecOutcome::Failure,
-        };
+        let Some(text) = ctx.read_span_or_frame_text(&span_name) else { return ExecOutcome::Failure };
+        let Ok(code) = compile(&text) else { return ExecOutcome::Failure };
         // Cache it.
         if let Some(span) = ctx.frame_set.get_span_mut(&span_name) {
             span.set_code(code.clone());
@@ -241,14 +229,8 @@ fn execute_span(
             code
         } else {
             // No cache — compile and store.
-            let text = match ctx.read_span_or_frame_text(&span_name) {
-                Some(t) => t,
-                None => return ExecOutcome::Failure,
-            };
-            let code = match compile(&text) {
-                Ok(c) => c,
-                Err(_) => return ExecOutcome::Failure,
-            };
+            let Some(text) = ctx.read_span_or_frame_text(&span_name) else { return ExecOutcome::Failure };
+            let Ok(code) = compile(&text) else { return ExecOutcome::Failure };
             if let Some(span) = ctx.frame_set.get_span_mut(&span_name) {
                 span.set_code(code.clone());
             } else if let Some(frame) = ctx.frame_set.get_frame_mut(&span_name) {
@@ -286,7 +268,7 @@ fn execute_span(
     outcome
 }
 
-/// Dispatch a CmdOp to the appropriate category handler.
+/// Dispatch a `CmdOp` to the appropriate category handler.
 fn dispatch_cmd(
     ctx: &mut ExecutionContext,
     op: CmdOp,
@@ -630,16 +612,10 @@ fn execute_file_execute(
     let path = tpars[0].content.trim().to_string();
 
     // Read file content.
-    let content = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return ExecOutcome::Failure,
-    };
+    let Ok(content) = std::fs::read_to_string(&path) else { return ExecOutcome::Failure };
 
     // Compile the content.
-    let code = match compile(&content) {
-        Ok(c) => c,
-        Err(_) => return ExecOutcome::Failure,
-    };
+    let Ok(code) = compile(&content) else { return ExecOutcome::Failure };
 
     // Load content into the COMMAND frame (for inspection; execution stays on
     // the current data frame, mirroring how EX/EN work).
@@ -684,10 +660,7 @@ fn execute_cmd_string(
         return ExecOutcome::Success;
     }
 
-    let code = match compile(&text) {
-        Ok(c) => c,
-        Err(_) => return ExecOutcome::Failure,
-    };
+    let Ok(code) = compile(&text) else { return ExecOutcome::Failure };
 
     ctx.recursion_depth += 1;
     let outcome = execute(ctx, &code);

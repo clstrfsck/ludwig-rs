@@ -1,6 +1,6 @@
 //! Key bindings for interactive mode.
 //!
-//! Maps crossterm KeyEvents to Ludwig actions.
+//! Maps crossterm `KeyEvents` to Ludwig actions.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -25,7 +25,7 @@ pub enum KeyAction {
     Ignore,
 }
 
-/// Resolve a KeyEvent to a KeyAction.
+/// Resolve a `KeyEvent` to a `KeyAction`.
 pub fn resolve_key(key: KeyEvent) -> KeyAction {
     // F63 is our resize sentinel from CrosstermTerminal
     if key.code == KeyCode::F(63) && key.modifiers == KeyModifiers::NONE {
@@ -52,7 +52,7 @@ pub fn resolve_key(key: KeyEvent) -> KeyAction {
         KeyCode::Backspace => KeyAction::Command("ZZ".to_string()),
         KeyCode::Delete => KeyAction::Command("D".to_string()),
         KeyCode::Enter => KeyAction::Command("ZC".to_string()),
-        KeyCode::Tab => KeyAction::Command("ZR".to_string()), // TODO: proper tab handling
+        KeyCode::Tab => KeyAction::Command("ZT".to_string()), // TODO: proper tab handling
         KeyCode::Home => KeyAction::Command(">ZL".to_string()),
         KeyCode::End => KeyAction::Command(">ZR".to_string()),
         KeyCode::PageUp => KeyAction::Command("WB".to_string()),
@@ -62,8 +62,7 @@ pub fn resolve_key(key: KeyEvent) -> KeyAction {
         KeyCode::Insert => KeyAction::ToggleMode,
 
         // Escape enters command introducer
-        KeyCode::Esc => KeyAction::CommandIntroducer,
-        KeyCode::Char('\\') => KeyAction::CommandIntroducer,
+        KeyCode::Esc | KeyCode::Char('\\') => KeyAction::CommandIntroducer,
 
         // Printable characters
         KeyCode::Char(ch) => KeyAction::InsertChar(ch),
@@ -116,7 +115,7 @@ pub fn key_event_to_name(key: KeyEvent) -> Option<String> {
         KeyCode::BackTab => Some("BACK-TAB".to_string()),
         KeyCode::Enter => Some("RETURN".to_string()),
         KeyCode::Esc => Some("ESCAPE".to_string()),
-        KeyCode::F(n) => Some(format!("F{}", n)),
+        KeyCode::F(n) => Some(format!("F{n}")),
         _ => None,
     }
 }

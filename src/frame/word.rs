@@ -31,6 +31,14 @@ pub trait WordCommands {
     fn cmd_ditto_down(&mut self, lead_param: LeadParam) -> CmdResult;
 }
 
+fn as_isize_safe(n: usize) -> isize {
+    isize::try_from(n).unwrap_or(isize::MAX)
+}
+
+fn as_usize_safe(n: isize) -> usize {
+    usize::try_from(n).unwrap_or(0)
+}
+
 impl WordCommands for Frame {
     fn cmd_word_advance(&mut self, lead_param: LeadParam) -> CmdResult {
         match lead_param {
@@ -41,7 +49,7 @@ impl WordCommands for Frame {
             LeadParam::Nint(n) => self.word_advance_backward(n),
             LeadParam::Pindef => self.word_advance_paragraph_forward(),
             LeadParam::Nindef => self.word_advance_paragraph_backward(),
-            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+            LeadParam::Marker(_) => CmdResult::Failure(CmdFailure::SyntaxError),
         }
     }
 
@@ -62,9 +70,8 @@ impl WordCommands for Frame {
         };
 
         // Step 2: Advance word(s) from word_start to find the deletion endpoint.
-        let advance_end = match self.find_word_delete_end(word_start, lead_param) {
-            Some(pos) => pos,
-            None => return CmdResult::Failure(CmdFailure::OutOfRange),
+        let Some(advance_end) = self.find_word_delete_end(word_start, lead_param) else {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
         };
 
         // Save advance_end column before any modification.
@@ -219,7 +226,7 @@ impl WordCommands for Frame {
             LeadParam::Minus => return CmdResult::Failure(CmdFailure::NotImplemented),
             LeadParam::Nint(_) => return CmdResult::Failure(CmdFailure::NotImplemented),
             LeadParam::Nindef => return CmdResult::Failure(CmdFailure::NotImplemented),
-            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+            LeadParam::Marker(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
         self.ditto(-1, count)
     }
@@ -244,7 +251,7 @@ impl WordCommands for Frame {
             LeadParam::Minus => return CmdResult::Failure(CmdFailure::NotImplemented),
             LeadParam::Nint(_) => return CmdResult::Failure(CmdFailure::NotImplemented),
             LeadParam::Nindef => return CmdResult::Failure(CmdFailure::NotImplemented),
-            _ => return CmdResult::Failure(CmdFailure::SyntaxError),
+            LeadParam::Marker(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
         self.ditto(1, count)
     }
@@ -320,8 +327,8 @@ impl Frame {
         lead_param: LeadParam,
     ) -> Option<Position> {
         match lead_param {
+            LeadParam::Pint(0) | LeadParam::Marker(_) => None,
             LeadParam::None | LeadParam::Plus => self.find_next_word_start_from(word_start),
-            LeadParam::Pint(0) => None, // delete 0 words → failure
             LeadParam::Pint(n) => {
                 let mut pos = word_start;
                 for _ in 0..n {
@@ -378,7 +385,6 @@ impl Frame {
                     .unwrap_or(0);
                 Some(Position::new(line, pos))
             }
-            _ => None,
         }
     }
 
@@ -391,9 +397,8 @@ impl Frame {
         while line < self.line_count() && !self.is_blank_line(line) {
             line += 1;
         }
-        let new_pos = match self.find_next_word_start_from(Position::new(line, 0)) {
-            Some(new_pos) => new_pos,
-            None => return CmdResult::Failure(CmdFailure::OutOfRange),
+        let Some(new_pos) = self.find_next_word_start_from(Position::new(line, 0)) else {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
         };
 
         self.set_mark_at(MarkId::Equals, dot);
@@ -573,7 +578,7 @@ impl Frame {
     /// Ditto: copy character(s) from line above (direction=-1) or below (direction=1).
     fn ditto(&mut self, direction: isize, count: usize) -> CmdResult {
         let dot = self.dot();
-        let source_line = (dot.line as isize + direction) as usize;
+        let source_line = as_usize_safe(as_isize_safe(dot.line) + direction);
 
         if direction < 0 && dot.line == 0 {
             return CmdResult::Failure(CmdFailure::OutOfRange);

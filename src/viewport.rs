@@ -18,6 +18,14 @@ pub struct ViewportParams {
     pub h_margin: usize,
 }
 
+fn as_usize_safe(n: i32) -> usize {
+    usize::try_from(n).unwrap_or(0)
+}
+
+fn as_i32_safe(n: usize) -> i32 {
+    i32::try_from(n).unwrap_or(i32::MAX)
+}
+
 impl ViewportParams {
     pub fn new(height: usize, width: usize) -> Self {
         let v_margin = (height / 4).clamp(1, 5);
@@ -71,7 +79,7 @@ impl Viewport {
         self.params = ViewportParams::new(height, width);
     }
 
-    /// The last visible line index (exclusive): top_line + height.
+    /// The last visible line index (exclusive): `top_line` + `params.height`.
     pub fn bottom_line(&self) -> usize {
         self.top_line + self.params.height
     }
@@ -109,7 +117,6 @@ impl Viewport {
                 scroll_v: n,
                 new_offset: off,
             },
-            (FixupAction::Redraw, _) | (_, FixupAction::Redraw) => FixupAction::Redraw,
             _ => FixupAction::Redraw,
         }
     }
@@ -134,13 +141,13 @@ impl Viewport {
             let screen_row = dot_line - top;
             if screen_row < margin && top > 0 {
                 // Too close to top — scroll down (reveal lines above)
-                let scroll = (top.min(margin - screen_row)) as i32;
+                let scroll = as_i32_safe(top.min(margin - screen_row));
                 FixupAction::ScrollV(-scroll)
             } else if screen_row >= height - margin && screen_row < height {
                 // Too close to bottom — scroll up (reveal lines below)
                 let scroll = (screen_row - (height - margin) + 1).min(max_up_scroll);
                 if scroll > 0 {
-                    FixupAction::ScrollV(scroll as i32)
+                    FixupAction::ScrollV(as_i32_safe(scroll))
                 } else {
                     FixupAction::None
                 }
@@ -152,7 +159,7 @@ impl Viewport {
             let delta = top - dot_line;
             if delta <= height {
                 let scroll = delta + margin.min(top.saturating_sub(delta));
-                FixupAction::ScrollV(-(scroll as i32))
+                FixupAction::ScrollV(-as_i32_safe(scroll))
             } else {
                 FixupAction::Redraw
             }
@@ -162,7 +169,7 @@ impl Viewport {
             if delta <= height {
                 let scroll = (delta + margin).min(max_up_scroll);
                 if scroll > 0 {
-                    FixupAction::ScrollV(scroll as i32)
+                    FixupAction::ScrollV(as_i32_safe(scroll))
                 } else {
                     FixupAction::None
                 }
@@ -201,15 +208,14 @@ impl Viewport {
         }
     }
 
-    /// Apply a fixup action, updating top_line and offset.
+    /// Apply a fixup action, updating `top_line` and `offset`.
     pub fn apply_fixup(&mut self, action: &FixupAction) {
         match action {
-            FixupAction::None => {}
             FixupAction::ScrollV(n) => {
                 if *n > 0 {
-                    self.top_line += *n as usize;
+                    self.top_line += as_usize_safe(*n);
                 } else {
-                    self.top_line = self.top_line.saturating_sub((-n) as usize);
+                    self.top_line = self.top_line.saturating_sub(as_usize_safe(-n));
                 }
             }
             FixupAction::SlideH(new_offset) => {
@@ -220,13 +226,13 @@ impl Viewport {
                 new_offset,
             } => {
                 if *scroll_v > 0 {
-                    self.top_line += *scroll_v as usize;
+                    self.top_line += as_usize_safe(*scroll_v);
                 } else {
-                    self.top_line = self.top_line.saturating_sub((-scroll_v) as usize);
+                    self.top_line = self.top_line.saturating_sub(as_usize_safe(-scroll_v));
                 }
                 self.offset = *new_offset;
             }
-            FixupAction::Redraw => {
+            FixupAction::Redraw | FixupAction::None => {
                 // Redraw will be handled by the caller — we just center the viewport
                 // on dot. The caller passes dot_line to apply_redraw separately.
             }
@@ -234,7 +240,7 @@ impl Viewport {
     }
 
     /// Center the viewport on a given dot position (for Redraw fixup).
-    /// Clamps top_line so EOF never floats above the bottom row.
+    /// Clamps `top_line` so EOF never floats above the bottom row.
     pub fn center_on(&mut self, dot_line: usize, dot_col: usize, line_count: usize) {
         let height = self.params.height;
         self.top_line = dot_line.saturating_sub(height / 2);

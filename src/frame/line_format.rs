@@ -688,7 +688,7 @@ impl Frame {
         let sep = if cur_len > self.left_margin { " " } else { "" };
         self.insert_at(
             Position::new(line, cur_len),
-            &format!("{}{}", sep, text_to_move),
+            &format!("{sep}{text_to_move}"),
         );
 
         // Remove [0, actual_end) from next line (leading spaces + moved words).
