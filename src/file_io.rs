@@ -42,7 +42,7 @@ impl fmt::Debug for FileHandle {
 }
 
 /// Open a file for reading.
-pub fn open_input(path: &Path) -> io::Result<FileHandle> {
+pub(crate) fn open_input(path: &Path) -> io::Result<FileHandle> {
     let file = fs::File::open(path)?;
     Ok(FileHandle {
         path: path.to_path_buf(),
@@ -58,7 +58,7 @@ pub fn open_input(path: &Path) -> io::Result<FileHandle> {
 }
 
 /// Open a file for writing, using a temp path to avoid overwriting until finalized.
-pub fn open_output(
+pub(crate) fn open_output(
     path: &Path,
     entab: bool,
     versions: usize,
@@ -89,7 +89,7 @@ pub fn open_output(
 /// Read all remaining content from a handle's reader, returning it as a String.
 ///
 /// The returned string includes newlines. Sets `at_eof` when the reader is exhausted.
-pub fn read_all(handle: &mut FileHandle) -> String {
+pub(crate) fn read_all(handle: &mut FileHandle) -> String {
     let mut result = String::new();
     if let Some(ref mut reader) = handle.reader {
         let mut line = String::new();
@@ -120,7 +120,7 @@ pub fn read_all(handle: &mut FileHandle) -> String {
 ///
 /// Use `n = usize::MAX` to read until EOF.
 /// Sets `at_eof` when the reader is exhausted.
-pub fn read_lines(handle: &mut FileHandle, n: usize) -> Vec<String> {
+pub(crate) fn read_lines(handle: &mut FileHandle, n: usize) -> Vec<String> {
     if handle.at_eof {
         return Vec::new();
     }
@@ -160,7 +160,7 @@ pub fn read_lines(handle: &mut FileHandle, n: usize) -> Vec<String> {
 }
 
 /// Write all text to the output file.
-pub fn write_all(handle: &mut FileHandle, text: &str) -> io::Result<()> {
+pub(crate) fn write_all(handle: &mut FileHandle, text: &str) -> io::Result<()> {
     if let Some(ref mut writer) = handle.writer {
         writer.write_all(text.as_bytes())?;
     }
@@ -170,7 +170,7 @@ pub fn write_all(handle: &mut FileHandle, text: &str) -> io::Result<()> {
 /// Write a slice of lines to the output file, appending `\n` to each.
 ///
 /// If `handle.entab` is set, converts leading 8-space runs to tabs.
-pub fn write_lines(handle: &mut FileHandle, lines: &[String]) -> io::Result<()> {
+pub(crate) fn write_lines(handle: &mut FileHandle, lines: &[String]) -> io::Result<()> {
     if let Some(ref mut writer) = handle.writer {
         for line in lines {
             let out = if handle.entab {
@@ -188,7 +188,7 @@ pub fn write_lines(handle: &mut FileHandle, lines: &[String]) -> io::Result<()> 
 /// Convert leading runs of 8 spaces to tab characters.
 ///
 /// Only leading whitespace is converted; the rest of the line is left unchanged.
-pub fn entab_line(line: &str) -> String {
+pub(crate) fn entab_line(line: &str) -> String {
     let mut leading = 0usize;
     let rest = line.trim_start_matches(|c| {
         if c == ' ' {
@@ -215,7 +215,7 @@ pub fn entab_line(line: &str) -> String {
 ///
 /// `create_backups`: if true and `handle.versions > 0` and the real path exists,
 /// rotate existing backups up (e.g. `path~1` → `path~2`) and rename `path` → `path~1`.
-pub fn finalize_output(handle: &mut FileHandle, create_backups: bool) -> io::Result<()> {
+pub(crate) fn finalize_output(handle: &mut FileHandle, create_backups: bool) -> io::Result<()> {
     // Flush and close the writer.
     if let Some(mut w) = handle.writer.take() {
         w.flush()?;
@@ -264,7 +264,7 @@ pub fn finalize_output(handle: &mut FileHandle, create_backups: bool) -> io::Res
 }
 
 /// Delete the temp file without renaming it (used by FK / FGK / error paths).
-pub fn delete_temp(handle: &FileHandle) {
+pub(crate) fn delete_temp(handle: &FileHandle) {
     if let Some(ref tp) = handle.temp_path {
         let _ = fs::remove_file(tp);
     }
@@ -273,7 +273,7 @@ pub fn delete_temp(handle: &FileHandle) {
 /// Rewind the reader to the beginning of the file.
 ///
 /// Resets `at_eof` and `lines_read`.
-pub fn rewind(handle: &mut FileHandle) -> io::Result<()> {
+pub(crate) fn rewind(handle: &mut FileHandle) -> io::Result<()> {
     handle.at_eof = false;
     handle.lines_read = 0;
     if let Some(ref mut reader) = handle.reader {

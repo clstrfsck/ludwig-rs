@@ -2,12 +2,13 @@ use clap::Parser;
 use std::fs;
 use std::io::{self, IsTerminal, Read};
 
+use ludwig::ExecOutcome;
 use ludwig::app::App;
+use ludwig::compile;
 use ludwig::frame_set::FrameSet;
 use ludwig::save::write_with_backup;
 use ludwig::screen::Screen;
 use ludwig::terminal::{CrosstermTerminal, Terminal};
-use ludwig::{ExecOutcome, compile};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

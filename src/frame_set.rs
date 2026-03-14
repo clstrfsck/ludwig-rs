@@ -3,12 +3,12 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::MarkId;
 use crate::code::{CompiledCode, ExecOutcome};
 use crate::exec_context::ExecutionContext;
 use crate::file_io::FileHandle;
 use crate::frame::{Frame, FrameOptions, FrameRegistry, KeyboardMode, default_tab_stops};
 use crate::interpreter;
+use crate::marks::MarkId;
 use crate::screen::{BatchScreenBackend, ScreenBackend};
 use crate::span::{Span, SpanRegistry};
 

@@ -1,57 +1,27 @@
 //! A Rope-based text editor frame with virtual space support and marks.
-//!
-//! # Example
-//!
-//! ```rust
-//! use ludwig::{EditCommands, Frame, LeadParam, MotionCommands, Position, TrailParam};
-//!
-//! // Note that a final newline is automatically added if missing
-//! let mut frame: Frame = Frame::from_str("FRAME-NAME", "hello world");
-//!
-//! // Move cursor to virtual space (beyond line end)
-//! frame.set_dot(Position::new(0, 20));
-//!
-//! // Insert text - line is automatically padded
-//! frame.cmd_insert_text(LeadParam::None, &TrailParam::from_str("!"));
-//!
-//! assert_eq!(frame.to_string(), "hello world         !\n");
-//!
-//! // Overtype text
-//! frame.set_dot(Position::new(0, 6));
-//! frame.cmd_overtype_text(LeadParam::None, &TrailParam::from_str("universe|"));
-//!
-//! assert_eq!(frame.to_string(), "hello universe|     !\n");
-//! ```
 
 pub mod app;
-pub mod cell_buffer;
-mod cmd_result;
-pub mod code;
-pub mod compiler;
-mod exec_context;
-pub(crate) mod file_io;
-mod frame;
 pub mod frame_set;
-mod interpreter;
-pub mod keybind;
-mod lead_param;
-mod marks;
-pub mod pattern;
-mod position;
 pub mod save;
 pub mod screen;
-mod span;
 pub mod terminal;
-mod trail_param;
-pub mod viewport;
 
-pub use cmd_result::{CmdFailure, CmdResult};
-pub use code::{CompiledCode, ExecOutcome};
+mod cell_buffer;
+mod cmd_result;
+mod code;
+mod compiler;
+mod exec_context;
+mod file_io;
+mod frame;
+mod interpreter;
+mod keybind;
+mod lead_param;
+mod marks;
+mod pattern;
+mod position;
+mod span;
+mod trail_param;
+mod viewport;
+
+pub use code::ExecOutcome;
 pub use compiler::compile;
-pub use frame::{
-    CaseMode, EditCommands, Frame, MotionCommands, PredicateCommands, SearchCommands, WordCommands,
-};
-pub use lead_param::LeadParam;
-pub use marks::{MarkId, MarkSet};
-pub use position::Position;
-pub use trail_param::TrailParam;

@@ -9,11 +9,11 @@
 //! window commands and output messages through this trait so that both batch and
 //! interactive modes share a single execution path.
 
-use crate::Position;
 use crate::cell_buffer::CellBuffer;
 use crate::code::CmdOp;
 use crate::frame::Frame;
 use crate::lead_param::LeadParam;
+use crate::position::Position;
 use crate::terminal::{TermSize, Terminal};
 use crate::viewport::{FixupAction, Viewport, ViewportParams};
 
@@ -528,8 +528,11 @@ impl Screen {
 mod tests {
     use super::*;
     use crate::{
-        EditCommands, LeadParam, TrailParam,
+        frame::EditCommands,
+        lead_param::LeadParam,
+        position::Position,
         terminal::{MockOp, MockTerminal, TermSize},
+        trail_param::TrailParam,
     };
 
     #[test]
@@ -586,7 +589,7 @@ mod tests {
             height: 24,
         });
         let mut frame = Frame::from_str("LUDWIG", "hello\n");
-        frame.set_dot(crate::Position::new(1, 0));
+        frame.set_dot(Position::new(1, 0));
         frame.cmd_insert_text(LeadParam::None, &TrailParam::from_str("/world"));
         let lc = frame.line_count();
         // EOF marker appears on the first line past the end
@@ -645,7 +648,7 @@ mod tests {
         let mut term = MockTerminal::new(80, 10);
 
         // Move dot to line 50
-        frame.set_dot(crate::Position::new(50, 0));
+        frame.set_dot(Position::new(50, 0));
         screen.fixup(&frame, &mut term);
 
         // Viewport should be centered around line 50
@@ -732,7 +735,7 @@ mod tests {
         term.ops.clear();
 
         // Move dot below visible area to trigger scroll
-        frame.set_dot(crate::Position::new(5, 0));
+        frame.set_dot(Position::new(5, 0));
         screen.fixup(&frame, &mut term);
 
         // Should have used terminal scroll_up
@@ -754,12 +757,12 @@ mod tests {
         let mut term = MockTerminal::new(20, 5);
 
         // Position viewport in the middle
-        frame.set_dot(crate::Position::new(5, 0));
+        frame.set_dot(Position::new(5, 0));
         screen.fixup(&frame, &mut term);
         term.ops.clear();
 
         // Move dot above visible area to trigger scroll down
-        frame.set_dot(crate::Position::new(0, 0));
+        frame.set_dot(Position::new(0, 0));
         screen.fixup(&frame, &mut term);
 
         assert!(
@@ -791,7 +794,7 @@ mod tests {
         // the fixup scrolls by delta+margin = 1+1 = 2 lines.
         // Viewport moves from lines 0-4 to lines 2-6.
         // Terminal scroll shifts 2 rows, revealing 2 new rows at the bottom.
-        frame.set_dot(crate::Position::new(5, 0));
+        frame.set_dot(Position::new(5, 0));
         screen.fixup(&frame, &mut term);
 
         // Only the newly revealed lines should be written, not the

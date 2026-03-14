@@ -60,39 +60,39 @@ impl Default for SpanRegistry {
 }
 
 impl SpanRegistry {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             spans: HashMap::new(),
         }
     }
 
     /// Insert or replace a span by name
-    pub fn insert(&mut self, name: String, span: Span) {
+    pub(crate) fn insert(&mut self, name: String, span: Span) {
         self.spans.insert(name, span);
     }
 
     /// Look up a span by name
-    pub fn get(&self, name: &str) -> Option<&Span> {
+    pub(crate) fn get(&self, name: &str) -> Option<&Span> {
         self.spans.get(name)
     }
 
     /// Mutable look-up by name
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut Span> {
+    pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut Span> {
         self.spans.get_mut(name)
     }
 
     /// Remove and return a span by name
-    pub fn remove(&mut self, name: &str) -> Option<Span> {
+    pub(crate) fn remove(&mut self, name: &str) -> Option<Span> {
         self.spans.remove(name)
     }
 
     /// Test whether a span exists
-    pub fn contains(&self, name: &str) -> bool {
+    pub(crate) fn contains(&self, name: &str) -> bool {
         self.spans.contains_key(name)
     }
 
     /// Return all span names in alphabetical order
-    pub fn sorted_names(&self) -> Vec<&str> {
+    pub(crate) fn sorted_names(&self) -> Vec<&str> {
         let mut names: Vec<&str> = self.spans.keys().map(|s| s.as_str()).collect();
         names.sort();
         names

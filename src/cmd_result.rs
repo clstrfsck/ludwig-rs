@@ -32,8 +32,6 @@ pub enum CmdFailure {
     FileNotOpen,
     /// FS: frame has no output file open.
     NoOutputFile,
-    /// FX: cannot execute FX from within the COMMAND frame.
-    FxFromCommandFrame,
 }
 
 impl CmdResult {

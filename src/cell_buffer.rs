@@ -119,15 +119,18 @@ impl CellBuffer {
         self.cells = vec![Cell::default(); width * height];
     }
 
+    #[cfg(test)]
     pub fn width(&self) -> usize {
         self.width
     }
 
+    #[cfg(test)]
     pub fn height(&self) -> usize {
         self.height
     }
 
     /// Get the cell at (col, row).
+    #[cfg(test)]
     pub fn get(&self, col: usize, row: usize) -> Cell {
         if col < self.width && row < self.height {
             self.cells[row * self.width + col]
@@ -137,6 +140,7 @@ impl CellBuffer {
     }
 
     /// Set the cell at (col, row).
+    #[cfg(test)]
     pub fn set(&mut self, col: usize, row: usize, cell: Cell) {
         if col < self.width && row < self.height {
             self.cells[row * self.width + col] = cell;

@@ -6,7 +6,6 @@
 
 use anyhow::Result;
 
-use crate::TrailParam;
 use crate::compiler;
 use crate::frame::{EditCommands, KeyboardMode};
 use crate::frame_set::FrameSet;
@@ -14,6 +13,7 @@ use crate::keybind::{self, KeyAction, PromptAction};
 use crate::lead_param::LeadParam;
 use crate::screen::{InteractiveScreenBackend, Screen};
 use crate::terminal::Terminal;
+use crate::trail_param::TrailParam;
 use crossterm::event::KeyEvent;
 
 /// The interactive application state.

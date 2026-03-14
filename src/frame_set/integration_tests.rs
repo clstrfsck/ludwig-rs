@@ -2,11 +2,11 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::MarkId;
-    use crate::Position;
     use crate::code::ExecOutcome;
     use crate::compiler::compile;
     use crate::frame_set::FrameSet;
+    use crate::marks::MarkId;
+    use crate::position::Position;
 
     fn frame_set_new() -> FrameSet {
         FrameSet::empty()

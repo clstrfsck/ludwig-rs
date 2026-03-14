@@ -4,11 +4,11 @@
 //! and returns a list of [`EpDirective`]s for the caller to apply.
 
 /// The maximum valid column number (1-based user input), matching MAX_STRLEN.
-pub const MAX_COL: usize = 400;
+pub(crate) const MAX_COL: usize = 400;
 
 /// A single parsed EP directive, ready to apply to a frame + context.
 #[derive(Debug, PartialEq, Eq)]
-pub enum EpDirective {
+pub(crate) enum EpDirective {
     /// `K=I|O|C` — set keyboard mode
     KeyboardMode {
         mode: EpKeyboardMode,
@@ -44,7 +44,7 @@ pub enum EpDirective {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EpKeyboardMode {
+pub(crate) enum EpKeyboardMode {
     Insert,
     Overtype,
     Command,
@@ -52,13 +52,13 @@ pub enum EpKeyboardMode {
 
 /// One option flag operation: set or clear a specific option.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EpOptionOp {
-    pub flag: EpOptionFlag,
+pub(crate) struct EpOptionOp {
+    pub(crate) flag: EpOptionFlag,
     pub set: bool, // true = set, false = clear
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EpOptionFlag {
+pub(crate) enum EpOptionFlag {
     AutoIndent, // I
     AutoWrap,   // W
     Newline,    // N
@@ -67,7 +67,7 @@ pub enum EpOptionFlag {
 
 /// A tab-stop operation.
 #[derive(Debug, PartialEq, Eq)]
-pub enum EpTabOp {
+pub(crate) enum EpTabOp {
     /// `T=D` — reset to default (every 8 columns)
     Default,
     /// `T=S` — set tab at current dot column
@@ -159,7 +159,7 @@ impl Parser {
 /// for `V=`.  The dot column is passed for `T=S`/`T=C` (stored in the directive
 /// itself via `SetAtDot`/`ClearAtDot` — the actual column is resolved at
 /// application time).
-pub fn parse_ep(
+pub(crate) fn parse_ep(
     s: &str,
     current_left: usize,
     current_right: usize,

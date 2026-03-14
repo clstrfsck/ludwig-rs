@@ -5,13 +5,13 @@
 //!
 //! # Pattern syntax
 //!
-//! | Token         | Meaning                                       |
-//! |---------------|-----------------------------------------------|
+//! | Token         | Meaning                                        |
+//! | ------------- | ---------------------------------------------- |
 //! | `A`           | One alphabetic character                       |
 //! | `U`           | One uppercase letter                           |
 //! | `L`           | One lowercase letter                           |
-//! | `N`           | One ASCII digit                                |
-//! | `S`           | One space character                            |
+//! | `N`           | One digit                                      |
+//! | `S`           | One whitespace character                       |
 //! | `P`           | One punctuation character                      |
 //! | `C`           | One printable character (0x20–0x7E)            |
 //! | `D/…/`        | Custom character set                           |
@@ -25,13 +25,16 @@
 //! | `nX`          | Exactly n                                      |
 //! | `[n]X`        | Exactly n                                      |
 //! | `[n,]X`       | At least n                                     |
+//! | `[,m]X`       | At most m                                      |
 //! | `[n,m]X`      | Between n and m                                |
 //! | `<`           | Beginning of line positional                   |
 //! | `>`           | End of line positional                         |
 //! | `{`           | Left-margin positional                         |
 //! | `}`           | Right-margin positional                        |
 //! | `^`           | Dot-column positional                          |
-//! | `@N`          | Mark-check positional                          |
+//! | `@n`          | Mark-check positional                          |
+//! | `=`           | Equals (last position) check                   |
+//! | `%`           | Last-modified position check                   |
 //! | `A,B`         | Context separator (left=A, middle=B)           |
 //! | `A,B,C`       | Full context (left=A, middle=B, right=C)       |
 
@@ -40,5 +43,5 @@ pub mod char_class;
 pub mod matcher;
 pub mod parser;
 
-pub use matcher::{MatchCtx, MatchResult, find_backward, find_forward, match_at};
-pub use parser::{PatternError, parse};
+pub use matcher::{MatchCtx, find_backward, find_forward, match_at};
+pub use parser::parse;

@@ -1,6 +1,7 @@
 //! The main Frame type that combines a Rope with marks and handles virtual space.
 
 mod edit;
+mod line_format;
 mod motion;
 pub(crate) mod params;
 mod predicate;
@@ -8,6 +9,7 @@ mod search;
 mod word;
 
 pub use edit::{CaseMode, EditCommands};
+pub use line_format::LineFormatCommands;
 pub use motion::MotionCommands;
 pub use predicate::PredicateCommands;
 pub use search::SearchCommands;
@@ -19,16 +21,16 @@ use std::ops::RangeBounds;
 
 use ropey::Rope;
 
-use crate::CompiledCode;
+use crate::code::CompiledCode;
 use crate::file_io::FileHandle;
 use crate::marks::{MarkId, MarkSet};
 use crate::position::Position;
 
 /// Number of tab-stop slots (columns 0..=TAB_STOPS_LEN-1).
-pub const TAB_STOPS_LEN: usize = 401;
+pub(crate) const TAB_STOPS_LEN: usize = 401;
 
 /// Build the default tab-stop array: stops at every column where `col % 8 == 0`.
-pub fn default_tab_stops() -> Vec<bool> {
+pub(crate) fn default_tab_stops() -> Vec<bool> {
     (0..TAB_STOPS_LEN).map(|i| i % 8 == 0).collect()
 }
 
@@ -497,39 +499,39 @@ impl Default for FrameRegistry {
 }
 
 impl FrameRegistry {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             frames: HashMap::new(),
         }
     }
 
     /// Insert or replace a frame by name
-    pub fn insert(&mut self, name: String, frame: Frame) {
+    pub(crate) fn insert(&mut self, name: String, frame: Frame) {
         self.frames.insert(name, frame);
     }
 
     /// Look up a frame by name
-    pub fn get(&self, name: &str) -> Option<&Frame> {
+    pub(crate) fn get(&self, name: &str) -> Option<&Frame> {
         self.frames.get(name)
     }
 
     /// Mutable look-up by name
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut Frame> {
+    pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut Frame> {
         self.frames.get_mut(name)
     }
 
     /// Test whether a frame exists.
-    pub fn contains(&self, name: &str) -> bool {
+    pub(crate) fn contains(&self, name: &str) -> bool {
         self.frames.contains_key(name)
     }
 
     /// Remove a frame by name, returning it if it existed.
-    pub fn remove(&mut self, name: &str) -> Option<Frame> {
+    pub(crate) fn remove(&mut self, name: &str) -> Option<Frame> {
         self.frames.remove(name)
     }
 
     /// Return all frame names (for iteration, e.g. fixing return pointers).
-    pub fn names(&self) -> Vec<String> {
+    pub(crate) fn names(&self) -> Vec<String> {
         self.frames.keys().cloned().collect()
     }
 

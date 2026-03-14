@@ -23,7 +23,7 @@ pub struct MarkSet {
     marks: HashMap<MarkId, Position>,
 }
 
-pub const NUMBERED_MARK_RANGE: std::ops::RangeInclusive<u8> = 1u8..=9u8;
+pub(crate) const NUMBERED_MARK_RANGE: std::ops::RangeInclusive<u8> = 1u8..=9u8;
 
 impl Default for MarkSet {
     fn default() -> Self {
