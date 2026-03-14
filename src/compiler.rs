@@ -14,7 +14,7 @@ use std::str::Chars;
 
 use anyhow::{Result, bail};
 
-use crate::code::*;
+use crate::code::{CompiledCode, Instruction, RepeatCount, CmdOp, ExitLevels, ExitHandler};
 use crate::lead_param::LeadParam;
 use crate::marks::{MarkId, NUMBERED_MARK_RANGE};
 use crate::trail_param::TrailParam;
@@ -43,7 +43,7 @@ impl Compiler<'_> {
         loop {
             self.skip_whitespace_and_comments();
             match self.chars.peek() {
-                None | Some(')') | Some(']') | Some(':') => break,
+                None | Some(')' | ']' | ':') => break,
                 _ => {
                     let instr = self.compile_command()?;
                     instructions.push(instr);
@@ -240,7 +240,7 @@ impl Compiler<'_> {
                 let num = s.parse::<usize>()?;
                 Ok(LeadParam::Pint(num))
             }
-            _ => bail!("Invalid leading parameter: {}", buf),
+            _ => bail!("Invalid leading parameter: {buf}"),
         }
     }
 

@@ -8,7 +8,7 @@ use crate::{
 
 use super::ExecutionContext;
 
-impl<'a> ExecutionContext<'a> {
+impl ExecutionContext<'_> {
     /// FI — File Input
     ///
     /// `FI/path/` — open a file and load its content into the current frame.
@@ -444,7 +444,7 @@ impl<'a> ExecutionContext<'a> {
         }
 
         // Build insertion text.
-        let text: String = lines.iter().map(|l| format!("{}\n", l)).collect();
+        let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
 
         let dot = self.frame_set.current_frame().dot();
         self.frame_set

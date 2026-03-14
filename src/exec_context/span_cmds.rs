@@ -21,7 +21,7 @@ pub(crate) fn parse_span_name(tpar: &TrailParam) -> Option<String> {
     Some(name.to_uppercase())
 }
 
-impl<'a> ExecutionContext<'a> {
+impl ExecutionContext<'_> {
     /// SD — Span Define
     ///
     /// `[lead]SD/name/`
@@ -54,9 +54,8 @@ impl<'a> ExecutionContext<'a> {
                     old_frame.unset_mark(old_span.mark_start);
                     old_frame.unset_mark(old_span.mark_end);
                     return CmdResult::Success;
-                } else {
-                    return CmdResult::Failure(CmdFailure::OutOfRange);
                 }
+                return CmdResult::Failure(CmdFailure::OutOfRange);
             }
             _ => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
@@ -322,7 +321,7 @@ impl<'a> ExecutionContext<'a> {
                 let last_col = hf.line_length_including_newline(last_line);
                 let insert_pos = Position::new(last_line, last_col);
                 // Insert span text followed by a newline separator.
-                hf.insert_at(insert_pos, &format!("{}\n", value));
+                hf.insert_at(insert_pos, &format!("{value}\n"));
                 // mark_end points just before the separator newline.
                 let mark_end_pos = insert_pos.after_text(&value);
                 hf.set_mark_at(id_start, insert_pos);
@@ -354,7 +353,7 @@ impl<'a> ExecutionContext<'a> {
                 None => String::from("<undefined>"),
             };
             self.screen
-                .output_line(&format!("{:<32} {}", name, preview));
+                .output_line(&format!("{name:<32} {preview}"));
         }
         CmdResult::Success
     }

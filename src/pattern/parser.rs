@@ -128,7 +128,7 @@ impl Parser<'_> {
 
         // Peek for terminators before consuming
         match self.chars.peek() {
-            None | Some('|') | Some(')') | Some(',') => return Ok(None),
+            None | Some('|' | ')' | ',') => return Ok(None),
             _ => {}
         }
 
@@ -137,7 +137,7 @@ impl Parser<'_> {
         // After a quantifier, skip spaces and re-check for terminators
         self.skip_space();
         match self.chars.peek() {
-            None | Some('|') | Some(')') | Some(',') => {
+            None | Some('|' | ')' | ',') => {
                 if quantifier.is_some() {
                     // A quantifier with no following element is an error
                     return Err(PatternError::UnexpectedEnd);
@@ -177,7 +177,7 @@ impl Parser<'_> {
 
     /// Parse a `[n,m]`-style quantifier (the opening `[` has already been consumed).
     fn parse_bracket_quantifier(&mut self) -> Result<Quantifier, PatternError> {
-        let first = if matches!(self.chars.peek(), Some(',') | Some(']')) {
+        let first = if matches!(self.chars.peek(), Some(',' | ']')) {
             None
         } else {
             Some(self.parse_number()?)
@@ -245,7 +245,7 @@ impl Parser<'_> {
                 }
                 Ok(Element::Group(Box::new(compound)))
             }
-            Some(&'\'') | Some(&'"') => {
+            Some(&'\'' | &'"') => {
                 let (text, case_fold) = self.parse_string()?;
                 Ok(Element::Literal { text, case_fold })
             }
@@ -278,7 +278,7 @@ impl Parser<'_> {
                 };
                 Ok(Element::MarkCheck(MarkId::Numbered(digit)))
             }
-            Some(&'$') | Some(&'&') => Err(PatternError::DereferenceNotSupported),
+            Some(&'$' | &'&') => Err(PatternError::DereferenceNotSupported),
             Some(&'-') => {
                 self.chars.next();
                 let kind = self.parse_charset_kind()?;
@@ -384,7 +384,7 @@ impl Parser<'_> {
     }
 
     fn skip_space(&mut self) {
-        while matches!(self.chars.peek(), Some(' ') | Some('\t')) {
+        while matches!(self.chars.peek(), Some(' ' | '\t')) {
             self.chars.next();
         }
     }

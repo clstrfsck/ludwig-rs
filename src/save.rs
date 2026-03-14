@@ -15,7 +15,7 @@ pub fn write_with_backup(contents: &str, path: &str, versions: usize) -> io::Res
 
     // Rotate existing backups highest → lowest to avoid clobbering.
     for v in (1..versions).rev() {
-        let old = format!("{}~{}", path, v);
+        let old = format!("{path}~{v}");
         let new = format!("{}~{}", path, v + 1);
         if Path::new(&old).exists() {
             let _ = std::fs::rename(&old, &new);
@@ -24,7 +24,7 @@ pub fn write_with_backup(contents: &str, path: &str, versions: usize) -> io::Res
 
     // Rename current file to ~1 backup.
     if versions >= 1 && dest.exists() {
-        let backup = format!("{}~1", path);
+        let backup = format!("{path}~1");
         std::fs::rename(dest, &backup)?;
     }
 
@@ -32,7 +32,7 @@ pub fn write_with_backup(contents: &str, path: &str, versions: usize) -> io::Res
     let body = if contents.is_empty() || contents.ends_with('\n') {
         contents.to_string()
     } else {
-        format!("{}\n", contents)
+        format!("{contents}\n")
     };
 
     std::fs::write(dest, &body)?;

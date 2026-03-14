@@ -65,10 +65,10 @@ pub(crate) fn open_output(
     purge: bool,
 ) -> io::Result<FileHandle> {
     let base = path.to_string_lossy().into_owned();
-    let mut temp_path = PathBuf::from(format!("{}-lw", base));
+    let mut temp_path = PathBuf::from(format!("{base}-lw"));
     let mut i = 1usize;
     while temp_path.exists() {
-        temp_path = PathBuf::from(format!("{}-lw{}", base, i));
+        temp_path = PathBuf::from(format!("{base}-lw{i}"));
         i += 1;
     }
 

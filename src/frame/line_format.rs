@@ -229,7 +229,7 @@ impl LineFormatCommands for Frame {
                     holes -= 1; // Last increment was at end of line, not a real hole.
 
                     if holes > 0 {
-                        let fill_ratio = space_to_add as f64 / holes as f64;
+                        let fill_ratio = space_to_add as f64 / f64::from(holes);
                         let mut debit = 0.0f64;
                         let mut pos = text_start;
 
@@ -245,7 +245,7 @@ impl LineFormatCommands for Frame {
                             let n = (debit + 0.5) as i32;
                             if n > 0 {
                                 self.insert_at(Position::new(line, pos), &" ".repeat(n as usize));
-                                debit -= n as f64;
+                                debit -= f64::from(n);
                             }
 
                             // Skip all spaces (original + any newly inserted).
@@ -336,7 +336,7 @@ impl LineFormatCommands for Frame {
             // Formula derived from C++ word_centre (translated to 0-based indexing):
             //   space_to_add = (right - left - line_len + first_ns) / 2 - (first_ns - left)
             let space_to_add: isize =
-                (right as isize - left as isize - line_len as isize + first_ns as isize) / 2
+                isize::midpoint(right as isize - left as isize - line_len as isize, first_ns as isize)
                     - (first_ns as isize - left as isize);
 
             if space_to_add > 0 {

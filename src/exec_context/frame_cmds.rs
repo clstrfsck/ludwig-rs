@@ -11,7 +11,7 @@ use crate::trail_param::TrailParam;
 
 use super::ExecutionContext;
 
-impl<'a> ExecutionContext<'a> {
+impl ExecutionContext<'_> {
     /// ED — Edit Frame
     ///
     /// `ED/name/` — switch to an existing frame or create a new one.
@@ -94,7 +94,7 @@ impl<'a> ExecutionContext<'a> {
                     .get_span(n)
                     .is_some_and(|s| s.frame_name == raw)
             })
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
             .collect();
 
         for span_name in &span_names_to_remove {

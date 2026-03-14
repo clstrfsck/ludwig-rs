@@ -1,6 +1,6 @@
 //! Application event loop for interactive mode.
 //!
-//! The `App` struct ties together the FrameSet, Screen, Terminal, and key bindings
+//! The `App` struct ties together the `FrameSet`, Screen, Terminal, and key bindings
 //! into a main event loop.  Command execution always goes through the interpreter
 //! via [`FrameSet::execute_with_screen`]; there is no parallel instruction loop here.
 
@@ -25,6 +25,7 @@ pub struct App {
 }
 
 impl App {
+    #[must_use] 
     pub fn new(frame_set: FrameSet, screen: Screen, file_path: Option<String>) -> Self {
         Self {
             frame_set,
@@ -132,7 +133,7 @@ impl App {
                 self.execute_compiled_code(&code, terminal);
             }
             Err(e) => {
-                self.screen.show_message(terminal, &format!("Error: {}", e));
+                self.screen.show_message(terminal, &format!("Error: {e}"));
                 terminal.beep();
             }
         }
@@ -168,14 +169,14 @@ impl App {
                 PromptAction::Backspace => {
                     if !input.is_empty() {
                         input.pop();
-                        let line = format!("{}{}", PROMPT, input);
+                        let line = format!("{PROMPT}{input}");
                         self.screen
                             .update_message_row(terminal, &line, prompt_len + input.len());
                     }
                 }
                 PromptAction::Char(ch) => {
                     input.push(ch);
-                    let line = format!("{}{}", PROMPT, input);
+                    let line = format!("{PROMPT}{input}");
                     self.screen
                         .update_message_row(terminal, &line, prompt_len + input.len());
                 }
@@ -240,7 +241,7 @@ impl App {
                 }
                 Err(e) => {
                     self.screen
-                        .show_message(terminal, &format!("Save failed: {}", e));
+                        .show_message(terminal, &format!("Save failed: {e}"));
                     terminal.beep();
                 }
             }

@@ -57,7 +57,7 @@ pub trait Terminal {
     /// Block until a key event is received.
     fn read_key(&mut self) -> Result<KeyEvent>;
 
-    /// Set the scroll region (top_row..=bottom_row inclusive, 0-based).
+    /// Set the scroll region (`top_row..=bottom_row` inclusive, 0-based).
     fn set_scroll_region(&mut self, top: u16, bottom: u16);
 
     /// Reset the scroll region to the full terminal height.
@@ -77,6 +77,7 @@ impl Default for CrosstermTerminal {
 }
 
 impl CrosstermTerminal {
+    #[must_use] 
     pub fn new() -> Self {
         let (w, h) = crossterm::terminal::size().unwrap_or((80, 24));
         Self {

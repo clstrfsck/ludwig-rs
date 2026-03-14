@@ -241,7 +241,7 @@ impl CellBuffer {
     }
 
     /// Diff two buffers and emit only changed cells via the terminal.
-    /// Consecutive changes on the same row are coalesced into single write_str calls.
+    /// Consecutive changes on the same row are coalesced into single `write_str` calls.
     /// Short gaps of matching cells (up to 4) are included in runs to avoid extra
     /// cursor moves, since a cursor move costs ~6 bytes vs 1 byte per character.
     const GAP_THRESHOLD: usize = 4;

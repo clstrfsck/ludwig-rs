@@ -77,7 +77,7 @@ impl ScreenBackend for BatchScreenBackend {
     }
 
     fn output_line(&mut self, msg: &str) {
-        println!("{}", msg);
+        println!("{msg}");
     }
 }
 
@@ -239,6 +239,7 @@ enum RelativeToEOF {
 }
 
 impl Screen {
+    #[must_use] 
     pub fn new(term_size: TermSize) -> Self {
         let height = term_size.height as usize;
         let width = term_size.width as usize;
@@ -266,6 +267,7 @@ impl Screen {
     }
 
     /// Number of usable text rows (total height minus message rows).
+    #[must_use] 
     pub fn text_height(&self) -> usize {
         self.viewport.params.height.saturating_sub(self.msg_rows)
     }
@@ -486,7 +488,7 @@ impl Screen {
     }
 
     /// Update the message row content and position cursor at a given column.
-    /// Used by command_input to keep the prompt line in sync with the cell buffer.
+    /// Used by `command_input` to keep the prompt line in sync with the cell buffer.
     pub fn update_message_row(
         &mut self,
         terminal: &mut dyn Terminal,
@@ -511,11 +513,12 @@ impl Screen {
     }
 
     /// Return the screen row used for messages (bottom row).
+    #[must_use] 
     pub fn message_row(&self) -> u16 {
         (self.viewport.params.height - 1) as u16
     }
 
-    /// Clear the message area. The next render_and_flush will overwrite the
+    /// Clear the message area. The next `render_and_flush` will overwrite the
     /// prompt on screen because `current` still holds the prompt text — the
     /// diff against the freshly rendered frame content emits every differing
     /// cell, including trailing spaces that erase leftover prompt characters.

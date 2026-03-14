@@ -38,7 +38,7 @@ impl CmdInfo {
     }
 }
 
-/// Map of command names to their CmdOp and parameter requirements.
+/// Map of command names to their `CmdOp` and parameter requirements.
 /// Keep names sorted alphabetically for readability.
 const NAME_TO_OP_MAP: Map<&'static str, CmdInfo> = phf_map! {
     "a" => CmdInfo {

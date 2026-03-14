@@ -540,8 +540,8 @@ impl Frame {
         let chars: Vec<char> = self.rope.chars_at(start_idx).take(count).collect();
 
         let new_chars: Vec<char> = match mode {
-            CaseMode::Upper => chars.iter().map(|c| c.to_ascii_uppercase()).collect(),
-            CaseMode::Lower => chars.iter().map(|c| c.to_ascii_lowercase()).collect(),
+            CaseMode::Upper => chars.iter().map(char::to_ascii_uppercase).collect(),
+            CaseMode::Lower => chars.iter().map(char::to_ascii_lowercase).collect(),
             CaseMode::Edit => {
                 // For *E: if preceding char is a letter → lowercase, else → uppercase.
                 // The "preceding char" for position i is the result of changing position i-1.
