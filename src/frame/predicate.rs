@@ -144,11 +144,13 @@ impl PredicateCommands for Frame {
             }
             LeadParam::Pint(n) => {
                 // NM — set mark N at dot
-                if let Ok(n8) = u8::try_from(n) && NUMBERED_MARK_RANGE.contains(&n8) {
+                if let Ok(n8) = u8::try_from(n)
+                    && NUMBERED_MARK_RANGE.contains(&n8)
+                {
                     self.set_mark_at(MarkId::Numbered(n8), self.dot());
                     return CmdResult::Success;
                 }
-                return CmdResult::Failure(CmdFailure::SyntaxError);
+                CmdResult::Failure(CmdFailure::SyntaxError)
             }
             LeadParam::Minus => {
                 // -M — unset mark 1
@@ -157,11 +159,13 @@ impl PredicateCommands for Frame {
             }
             LeadParam::Nint(n) => {
                 // -nM — unset mark n
-                if let Ok(n8) = u8::try_from(n) && NUMBERED_MARK_RANGE.contains(&n8) {
+                if let Ok(n8) = u8::try_from(n)
+                    && NUMBERED_MARK_RANGE.contains(&n8)
+                {
                     self.unset_mark(MarkId::Numbered(n8));
-                    return CmdResult::Success
+                    return CmdResult::Success;
                 }
-                return CmdResult::Failure(CmdFailure::SyntaxError);
+                CmdResult::Failure(CmdFailure::SyntaxError)
             }
             _ => CmdResult::Failure(CmdFailure::SyntaxError),
         }

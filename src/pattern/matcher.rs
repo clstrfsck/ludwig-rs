@@ -4,7 +4,7 @@
 
 use crate::marks::MarkSet;
 
-use super::ast::{PatternDef, Compound, Item, Quantifier, Element, Positional};
+use super::ast::{Compound, Element, Item, PatternDef, Positional, Quantifier};
 use super::char_class::charset_matches;
 
 /// Context provided to the matcher for a single line.
@@ -136,8 +136,7 @@ pub fn match_at(pattern: &PatternDef, ctx: &MatchCtx, col: usize) -> Option<Matc
     // Left context must end at col
     if !pattern.left.is_empty_pattern() {
         let left_ok = (0..=col).any(|start| {
-            match_compound(&pattern.left, ctx, start, &mut steps)
-                .is_some_and(|end| end == col)
+            match_compound(&pattern.left, ctx, start, &mut steps).is_some_and(|end| end == col)
         });
         if !left_ok {
             return None;

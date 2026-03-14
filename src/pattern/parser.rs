@@ -5,7 +5,10 @@ use std::str::Chars;
 
 use crate::marks::MarkId;
 
-use super::ast::{PatternDef, Compound, Sequence, Item, Quantifier, Element, Positional, CharSet, CharSetKind, CharClass};
+use super::ast::{
+    CharClass, CharSet, CharSetKind, Compound, Element, Item, PatternDef, Positional, Quantifier,
+    Sequence,
+};
 
 /// Errors that can occur while parsing a Ludwig pattern.
 #[derive(Debug, Clone, PartialEq)]
