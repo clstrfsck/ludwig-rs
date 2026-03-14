@@ -96,17 +96,13 @@ pub(crate) fn read_all(handle: &mut FileHandle) -> String {
         loop {
             line.clear();
             match reader.read_line(&mut line) {
-                Ok(0) => {
+                Ok(0) | Err(_) => {
                     handle.at_eof = true;
                     break;
                 }
                 Ok(_) => {
                     handle.lines_read += 1;
                     result.push_str(&line);
-                }
-                Err(_) => {
-                    handle.at_eof = true;
-                    break;
                 }
             }
         }
@@ -134,7 +130,7 @@ pub(crate) fn read_lines(handle: &mut FileHandle, n: usize) -> Vec<String> {
             }
             raw.clear();
             match reader.read_line(&mut raw) {
-                Ok(0) => {
+                Ok(0) | Err(_) => {
                     handle.at_eof = true;
                     break;
                 }
@@ -146,10 +142,6 @@ pub(crate) fn read_lines(handle: &mut FileHandle, n: usize) -> Vec<String> {
                         .to_string();
                     result.push(content);
                     count += 1;
-                }
-                Err(_) => {
-                    handle.at_eof = true;
-                    break;
                 }
             }
         }
@@ -222,9 +214,8 @@ pub(crate) fn finalize_output(handle: &mut FileHandle, create_backups: bool) -> 
         // w is dropped here, closing the file.
     }
 
-    let temp_path = match handle.temp_path.take() {
-        Some(p) => p,
-        None => return Ok(()),
+    let Some(temp_path) = handle.temp_path.take() else {
+        return Ok(());
     };
 
     // Create backup copies if requested.

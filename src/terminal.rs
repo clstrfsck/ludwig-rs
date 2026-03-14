@@ -19,9 +19,15 @@ pub struct TermSize {
 /// Abstraction over terminal operations.
 pub trait Terminal {
     /// Enter raw mode and prepare the terminal.
+    ///
+    /// # Errors
+    /// Returns an error if the terminal is in an invalid state or if initialization fails.
     fn init(&mut self) -> Result<()>;
 
     /// Restore the terminal to its original state.
+    ///
+    /// # Errors
+    /// Returns an error if the terminal is in an invalid state or if cleanup fails.
     fn cleanup(&mut self) -> Result<()>;
 
     /// Get the current terminal dimensions.
@@ -55,6 +61,9 @@ pub trait Terminal {
     fn flush(&mut self);
 
     /// Block until a key event is received.
+    ///
+    /// # Errors
+    /// Returns an error if the terminal is in an invalid state or if input fails.
     fn read_key(&mut self) -> Result<KeyEvent>;
 
     /// Set the scroll region (`top_row..=bottom_row` inclusive, 0-based).
@@ -77,7 +86,7 @@ impl Default for CrosstermTerminal {
 }
 
 impl CrosstermTerminal {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         let (w, h) = crossterm::terminal::size().unwrap_or((80, 24));
         Self {

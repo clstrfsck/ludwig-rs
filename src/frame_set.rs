@@ -73,21 +73,21 @@ pub struct FrameSet {
 
 impl FrameSet {
     /// Create a new empty frame set with the default main frame.
-    #[must_use] 
+    #[must_use]
     pub fn empty() -> Self {
         Self::new(Frame::new(DEFAULT_FRAME_NAME))
     }
 
     /// Create a frame set from an initial buffer string.
     #[allow(clippy::should_implement_trait)]
-    #[must_use] 
+    #[must_use]
     pub fn from_str(s: &str) -> Self {
         Self::new(Frame::from_str(DEFAULT_FRAME_NAME, s))
     }
 
     /// Wrap an existing frame as the default / current frame.
     /// Fresh special frames are also created.
-    #[must_use] 
+    #[must_use]
     pub fn new(main_frame: Frame) -> Self {
         let mut frames = FrameRegistry::new();
         let main_name = main_frame.name().to_string();
@@ -112,14 +112,14 @@ impl FrameSet {
     }
 
     /// Create a new frame whose parameters are initialised from `defaults`.
-    #[must_use] 
+    #[must_use]
     pub fn create_frame_from_defaults(&self, name: &str) -> Frame {
         let mut f = Frame::new(name);
         f.left_margin = self.defaults.left_margin;
         f.right_margin = self.defaults.right_margin;
         f.margin_top = self.defaults.margin_top;
         f.margin_bottom = self.defaults.margin_bottom;
-        f.tab_stops = self.defaults.tab_stops.clone();
+        f.tab_stops.clone_from(&self.defaults.tab_stops);
         f.options = self.defaults.options.clone();
         f
     }
@@ -140,25 +140,28 @@ impl FrameSet {
     }
 
     /// Return all frame names (for iterating to fix return pointers in EK).
-    #[must_use] 
+    #[must_use]
     pub fn frame_names(&self) -> Vec<String> {
         self.frames.names()
     }
 
     /// Name of the current frame.
-    #[must_use] 
+    #[must_use]
     pub fn current_name(&self) -> &str {
         &self.current_name
     }
 
     /// Name of the HEAP frame.
-    #[must_use] 
+    #[must_use]
     pub fn heap_name(&self) -> &str {
         HEAP_FRAME_NAME
     }
 
     /// Immutable reference to the current frame.
-    #[must_use] 
+    ///
+    /// # Panics
+    /// Panics if the current frame does not exist. This should never happen if the frame set is manipulated correctly.
+    #[must_use]
     pub fn current_frame(&self) -> &Frame {
         self.frames
             .get(&self.current_name)
@@ -173,7 +176,7 @@ impl FrameSet {
     }
 
     /// Check whether the current frame has been modified.
-    #[must_use] 
+    #[must_use]
     pub fn modified(&self) -> bool {
         self.current_frame().get_mark(MarkId::Modified).is_some()
     }
@@ -207,7 +210,7 @@ impl FrameSet {
     }
 
     /// Immutable reference to a frame by name.
-    #[must_use] 
+    #[must_use]
     pub fn get_frame(&self, name: &str) -> Option<&Frame> {
         self.frames.get(&normalise(name))
     }
@@ -218,13 +221,13 @@ impl FrameSet {
     }
 
     /// Test whether a frame exists.
-    #[must_use] 
+    #[must_use]
     pub fn contains_frame(&self, name: &str) -> bool {
         self.frames.contains(&normalise(name))
     }
 
     /// Look up a span by name (case-insensitive).
-    #[must_use] 
+    #[must_use]
     pub fn get_span(&self, name: &str) -> Option<&Span> {
         self.spans.get(&normalise(name))
     }
@@ -245,19 +248,19 @@ impl FrameSet {
     }
 
     /// Test whether a span exists.
-    #[must_use] 
+    #[must_use]
     pub fn contains_span(&self, name: &str) -> bool {
         self.spans.contains(&normalise(name))
     }
 
     /// Get a list of all span names, sorted case-insensitively.
-    #[must_use] 
+    #[must_use]
     pub fn sorted_span_names(&self) -> Vec<&str> {
         self.spans.sorted_names()
     }
 
     /// Get a list of all frame names, sorted case-insensitively.
-    #[must_use] 
+    #[must_use]
     pub fn sorted_frame_names(&self) -> Vec<&str> {
         self.frames.sorted_names()
     }

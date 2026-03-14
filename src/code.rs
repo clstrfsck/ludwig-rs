@@ -265,7 +265,7 @@ pub enum ExecOutcome {
 }
 
 impl ExecOutcome {
-    #[must_use] 
+    #[must_use]
     pub fn is_success(&self) -> bool {
         matches!(
             self,

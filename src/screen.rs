@@ -239,7 +239,7 @@ enum RelativeToEOF {
 }
 
 impl Screen {
-    #[must_use] 
+    #[must_use]
     pub fn new(term_size: TermSize) -> Self {
         let height = term_size.height as usize;
         let width = term_size.width as usize;
@@ -267,7 +267,7 @@ impl Screen {
     }
 
     /// Number of usable text rows (total height minus message rows).
-    #[must_use] 
+    #[must_use]
     pub fn text_height(&self) -> usize {
         self.viewport.params.height.saturating_sub(self.msg_rows)
     }
@@ -292,10 +292,7 @@ impl Screen {
                 self.viewport.apply_fixup(&action);
                 self.scroll_terminal(terminal, *n);
             }
-            FixupAction::SlideH(_) => {
-                self.viewport.apply_fixup(&action);
-            }
-            FixupAction::ScrollAndSlide { .. } => {
+            FixupAction::SlideH(_) | FixupAction::ScrollAndSlide { .. } => {
                 self.viewport.apply_fixup(&action);
             }
             FixupAction::Redraw => {
@@ -513,7 +510,7 @@ impl Screen {
     }
 
     /// Return the screen row used for messages (bottom row).
-    #[must_use] 
+    #[must_use]
     pub fn message_row(&self) -> u16 {
         (self.viewport.params.height - 1) as u16
     }

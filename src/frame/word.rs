@@ -31,14 +31,6 @@ pub trait WordCommands {
     fn cmd_ditto_down(&mut self, lead_param: LeadParam) -> CmdResult;
 }
 
-fn as_isize_safe(n: usize) -> isize {
-    isize::try_from(n).unwrap_or(isize::MAX)
-}
-
-fn as_usize_safe(n: isize) -> usize {
-    usize::try_from(n).unwrap_or(0)
-}
-
 impl WordCommands for Frame {
     fn cmd_word_advance(&mut self, lead_param: LeadParam) -> CmdResult {
         match lead_param {
@@ -578,11 +570,12 @@ impl Frame {
     /// Ditto: copy character(s) from line above (direction=-1) or below (direction=1).
     fn ditto(&mut self, direction: isize, count: usize) -> CmdResult {
         let dot = self.dot();
-        let source_line = as_usize_safe(as_isize_safe(dot.line) + direction);
 
         if direction < 0 && dot.line == 0 {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }
+
+        let source_line = dot.line.saturating_add_signed(direction);
         if direction > 0 && source_line >= self.line_count() {
             return CmdResult::Failure(CmdFailure::OutOfRange);
         }

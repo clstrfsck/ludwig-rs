@@ -25,7 +25,7 @@ pub struct App {
 }
 
 impl App {
-    #[must_use] 
+    #[must_use]
     pub fn new(frame_set: FrameSet, screen: Screen, file_path: Option<String>) -> Self {
         Self {
             frame_set,
@@ -36,6 +36,9 @@ impl App {
     }
 
     /// Run the main event loop.
+    ///
+    /// # Errors
+    /// Returns an error if terminal initialization or cleanup fails.
     pub fn run(&mut self, terminal: &mut dyn Terminal) -> Result<()> {
         terminal.init()?;
 
@@ -46,9 +49,8 @@ impl App {
 
         while self.running {
             self.screen.redraw(self.frame_set.current_frame(), terminal);
-            let key = match terminal.read_key() {
-                Ok(key) => key,
-                Err(_) => continue,
+            let Ok(key) = terminal.read_key() else {
+                continue;
             };
 
             // Check user-defined key bindings (UK command) first.
@@ -152,9 +154,8 @@ impl App {
         let mut input = String::new();
 
         loop {
-            let key = match terminal.read_key() {
-                Ok(key) => key,
-                Err(_) => continue,
+            let Ok(key) = terminal.read_key() else {
+                continue;
             };
 
             match keybind::resolve_prompt_key(key) {
@@ -255,9 +256,8 @@ impl App {
     /// Check whether the key event matches a user-defined binding (UK).
     /// If a binding is found, execute it and return `true`; otherwise return `false`.
     fn dispatch_user_key(&mut self, key: KeyEvent, terminal: &mut dyn Terminal) -> bool {
-        let name = match keybind::key_event_to_name(key) {
-            Some(n) => n,
-            None => return false,
+        let Some(name) = keybind::key_event_to_name(key) else {
+            return false;
         };
         // Clone the code out to avoid holding a borrow on frame_set.
         let code = match self.frame_set.user_key_bindings.get(&name) {

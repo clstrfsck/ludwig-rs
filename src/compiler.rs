@@ -14,12 +14,15 @@ use std::str::Chars;
 
 use anyhow::{Result, bail};
 
-use crate::code::{CompiledCode, Instruction, RepeatCount, CmdOp, ExitLevels, ExitHandler};
+use crate::code::{CmdOp, CompiledCode, ExitHandler, ExitLevels, Instruction, RepeatCount};
 use crate::lead_param::LeadParam;
 use crate::marks::{MarkId, NUMBERED_MARK_RANGE};
 use crate::trail_param::TrailParam;
 
 /// Compile a Ludwig command string into a [`CompiledCode`] tree.
+///
+/// # Errors
+/// Returns an error if the input has invalid syntax or unknown commands.
 pub fn compile(input: &str) -> Result<CompiledCode> {
     let mut compiler = Compiler {
         chars: input.chars().peekable(),
@@ -132,7 +135,7 @@ impl Compiler<'_> {
 
         // Validate leading parameter
         let kind = lead_param_kind(&lead);
-        if !cmd.allows_lead(&kind) {
+        if !cmd.allows_lead(kind) {
             bail!("Syntax error.");
         }
 

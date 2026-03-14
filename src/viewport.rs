@@ -4,6 +4,8 @@
 //! portion of the frame is visible and computes what needs to happen when the
 //! cursor (dot) moves outside the visible area.
 
+use crate::sat;
+
 /// Parameters that define the viewport geometry.
 #[derive(Debug, Clone, Copy)]
 pub struct ViewportParams {
@@ -16,14 +18,6 @@ pub struct ViewportParams {
     pub v_margin: usize,
     /// Horizontal scroll margin.
     pub h_margin: usize,
-}
-
-fn as_usize_safe(n: i32) -> usize {
-    usize::try_from(n).unwrap_or(0)
-}
-
-fn as_i32_safe(n: usize) -> i32 {
-    i32::try_from(n).unwrap_or(i32::MAX)
 }
 
 impl ViewportParams {
@@ -141,13 +135,13 @@ impl Viewport {
             let screen_row = dot_line - top;
             if screen_row < margin && top > 0 {
                 // Too close to top — scroll down (reveal lines above)
-                let scroll = as_i32_safe(top.min(margin - screen_row));
+                let scroll = sat::usize_to_i32(top.min(margin - screen_row));
                 FixupAction::ScrollV(-scroll)
             } else if screen_row >= height - margin && screen_row < height {
                 // Too close to bottom — scroll up (reveal lines below)
                 let scroll = (screen_row - (height - margin) + 1).min(max_up_scroll);
                 if scroll > 0 {
-                    FixupAction::ScrollV(as_i32_safe(scroll))
+                    FixupAction::ScrollV(sat::usize_to_i32(scroll))
                 } else {
                     FixupAction::None
                 }
@@ -159,7 +153,7 @@ impl Viewport {
             let delta = top - dot_line;
             if delta <= height {
                 let scroll = delta + margin.min(top.saturating_sub(delta));
-                FixupAction::ScrollV(-as_i32_safe(scroll))
+                FixupAction::ScrollV(-sat::usize_to_i32(scroll))
             } else {
                 FixupAction::Redraw
             }
@@ -169,7 +163,7 @@ impl Viewport {
             if delta <= height {
                 let scroll = (delta + margin).min(max_up_scroll);
                 if scroll > 0 {
-                    FixupAction::ScrollV(as_i32_safe(scroll))
+                    FixupAction::ScrollV(sat::usize_to_i32(scroll))
                 } else {
                     FixupAction::None
                 }
@@ -213,9 +207,9 @@ impl Viewport {
         match action {
             FixupAction::ScrollV(n) => {
                 if *n > 0 {
-                    self.top_line += as_usize_safe(*n);
+                    self.top_line += sat::i32_to_usize(*n);
                 } else {
-                    self.top_line = self.top_line.saturating_sub(as_usize_safe(-n));
+                    self.top_line = self.top_line.saturating_sub(sat::i32_to_usize(-n));
                 }
             }
             FixupAction::SlideH(new_offset) => {
@@ -226,9 +220,9 @@ impl Viewport {
                 new_offset,
             } => {
                 if *scroll_v > 0 {
-                    self.top_line += as_usize_safe(*scroll_v);
+                    self.top_line += sat::i32_to_usize(*scroll_v);
                 } else {
-                    self.top_line = self.top_line.saturating_sub(as_usize_safe(-scroll_v));
+                    self.top_line = self.top_line.saturating_sub(sat::i32_to_usize(-scroll_v));
                 }
                 self.offset = *new_offset;
             }

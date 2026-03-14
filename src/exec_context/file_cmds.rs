@@ -1,5 +1,7 @@
 //! File I/O commands: FI, FO, FE, FK, FB, FS, FT, FX, FGI, FGO, FGR, FGW, FGB, FGK.
 
+use std::fmt::Write;
+
 use crate::file_io;
 use crate::{
     cmd_result::CmdFailure, cmd_result::CmdResult, lead_param::LeadParam, marks::MarkId,
@@ -30,9 +32,8 @@ impl ExecutionContext<'_> {
                 let path_str = tpars[0].content.trim().to_string();
                 let path = std::path::PathBuf::from(&path_str);
 
-                let mut fh = match file_io::open_input(&path) {
-                    Ok(h) => h,
-                    Err(_) => return CmdResult::Failure(CmdFailure::FileOpenError),
+                let Ok(mut fh) = file_io::open_input(&path) else {
+                    return CmdResult::Failure(CmdFailure::FileOpenError);
                 };
 
                 // Read all content (handle not yet stored on frame — no borrow conflict).
@@ -104,9 +105,8 @@ impl ExecutionContext<'_> {
                     std::path::PathBuf::from(&path_str)
                 };
 
-                let fh = match file_io::open_output(&path, false, 1, false) {
-                    Ok(h) => h,
-                    Err(_) => return CmdResult::Failure(CmdFailure::FileOpenError),
+                let Ok(fh) = file_io::open_output(&path, false, 1, false) else {
+                    return CmdResult::Failure(CmdFailure::FileOpenError);
                 };
 
                 self.frame_set.current_frame_mut().output_file = Some(fh);
@@ -170,16 +170,14 @@ impl ExecutionContext<'_> {
                 let path = std::path::PathBuf::from(&path_str);
 
                 // Open input and read all content.
-                let mut input_fh = match file_io::open_input(&path) {
-                    Ok(h) => h,
-                    Err(_) => return CmdResult::Failure(CmdFailure::FileOpenError),
+                let Ok(mut input_fh) = file_io::open_input(&path) else {
+                    return CmdResult::Failure(CmdFailure::FileOpenError);
                 };
                 let text = file_io::read_all(&mut input_fh);
 
                 // Open output.
-                let output_fh = match file_io::open_output(&path, false, 1, false) {
-                    Ok(h) => h,
-                    Err(_) => return CmdResult::Failure(CmdFailure::FileOpenError),
+                let Ok(output_fh) = file_io::open_output(&path, false, 1, false) else {
+                    return CmdResult::Failure(CmdFailure::FileOpenError);
                 };
 
                 // Load content into frame.
@@ -307,15 +305,13 @@ impl ExecutionContext<'_> {
         }
 
         // Reopen for continued editing.
-        let mut new_input = match file_io::open_input(&path) {
-            Ok(h) => h,
-            Err(_) => return CmdResult::Failure(CmdFailure::FileOpenError),
+        let Ok(mut new_input) = file_io::open_input(&path) else {
+            return CmdResult::Failure(CmdFailure::FileOpenError);
         };
         let new_text = file_io::read_all(&mut new_input);
 
-        let new_output = match file_io::open_output(&path, entab, versions, purge) {
-            Ok(h) => h,
-            Err(_) => return CmdResult::Failure(CmdFailure::FileOpenError),
+        let Ok(new_output) = file_io::open_output(&path, entab, versions, purge) else {
+            return CmdResult::Failure(CmdFailure::FileOpenError);
         };
 
         let frame = self.frame_set.current_frame_mut();
@@ -359,9 +355,8 @@ impl ExecutionContext<'_> {
                 let path_str = tpars[0].content.trim().to_string();
                 let path = std::path::PathBuf::from(&path_str);
 
-                let fh = match file_io::open_input(&path) {
-                    Ok(h) => h,
-                    Err(_) => return CmdResult::Failure(CmdFailure::FileOpenError),
+                let Ok(fh) = file_io::open_input(&path) else {
+                    return CmdResult::Failure(CmdFailure::FileOpenError);
                 };
 
                 self.frame_set.global_input = Some(fh);
@@ -402,9 +397,8 @@ impl ExecutionContext<'_> {
                 let path_str = tpars[0].content.trim().to_string();
                 let path = std::path::PathBuf::from(&path_str);
 
-                let fh = match file_io::open_output(&path, false, 0, false) {
-                    Ok(h) => h,
-                    Err(_) => return CmdResult::Failure(CmdFailure::FileOpenError),
+                let Ok(fh) = file_io::open_output(&path, false, 0, false) else {
+                    return CmdResult::Failure(CmdFailure::FileOpenError);
                 };
 
                 self.frame_set.global_output = Some(fh);
@@ -444,7 +438,10 @@ impl ExecutionContext<'_> {
         }
 
         // Build insertion text.
-        let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+        let text = lines.iter().fold(String::new(), |mut output, l| {
+            let _ = writeln!(output, "{l}");
+            output
+        });
 
         let dot = self.frame_set.current_frame().dot();
         self.frame_set

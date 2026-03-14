@@ -33,8 +33,8 @@ pub(super) struct CmdInfo {
 }
 
 impl CmdInfo {
-    pub(super) fn allows_lead(&self, kind: &LeadParamKind) -> bool {
-        (self.allowed_leads & (1u8 << (*kind as u8))) != 0
+    pub(super) fn allows_lead(&self, kind: LeadParamKind) -> bool {
+        (self.allowed_leads & (1u8 << (kind as u8))) != 0
     }
 }
 

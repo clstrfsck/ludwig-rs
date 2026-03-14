@@ -28,9 +28,8 @@ impl ExecutionContext<'_> {
     /// Defines a span bounded by dot and another mark.
     /// Lead: None/Plus → mark 1; Pint(n) → mark n; Marker(Equals) → Equals mark.
     pub(crate) fn cmd_span_define(&mut self, lead: LeadParam, tpars: &[TrailParam]) -> CmdResult {
-        let span_name = match parse_span_name(&tpars[0]) {
-            Some(n) => n,
-            None => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Some(span_name) = parse_span_name(&tpars[0]) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
         if self.frame_set.contains_frame(&span_name) {
             return CmdResult::Failure(CmdFailure::FrameExists);
@@ -62,9 +61,8 @@ impl ExecutionContext<'_> {
 
         // Get both positions from the current frame.
         let dot_pos = self.current_frame().dot();
-        let other_pos = match self.current_frame().get_mark(second_mark) {
-            Some(p) => p,
-            None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
+        let Some(other_pos) = self.current_frame().get_mark(second_mark) else {
+            return CmdResult::Failure(CmdFailure::MarkNotDefined);
         };
 
         let (pos_start, pos_end) = if dot_pos <= other_pos {
@@ -103,9 +101,8 @@ impl ExecutionContext<'_> {
     /// `nSC/name/`
     /// Copies the span's text into the current frame at dot, N times (default 1).
     pub(crate) fn cmd_span_copy(&mut self, lead: LeadParam, tpar: &TrailParam) -> CmdResult {
-        let span_or_frame_name = match parse_span_name(tpar) {
-            Some(n) => n,
-            None => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Some(span_or_frame_name) = parse_span_name(tpar) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
         let count = match lead {
             LeadParam::None | LeadParam::Plus => 1usize,
@@ -135,31 +132,26 @@ impl ExecutionContext<'_> {
             return CmdResult::Failure(CmdFailure::SyntaxError);
         }
 
-        let span_name = match parse_span_name(&tpars[0]) {
-            Some(n) => n,
-            None => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Some(span_name) = parse_span_name(&tpars[0]) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
 
         // Collect all needed info before any mutation.
         let (text, src_frame_name, src_mark_start, src_mark_end, src_from, src_to) = {
-            let span = match self.frame_set.get_span(&span_name) {
-                Some(s) => s,
-                None => return CmdResult::Failure(CmdFailure::OutOfRange),
+            let Some(span) = self.frame_set.get_span(&span_name) else {
+                return CmdResult::Failure(CmdFailure::OutOfRange);
             };
             let frame_name = span.frame_name.clone();
             let mark_start = span.mark_start;
             let mark_end = span.mark_end;
-            let frame = match self.frame_set.get_frame(&frame_name) {
-                Some(f) => f,
-                None => return CmdResult::Failure(CmdFailure::OutOfRange),
+            let Some(frame) = self.frame_set.get_frame(&frame_name) else {
+                return CmdResult::Failure(CmdFailure::OutOfRange);
             };
-            let from = match frame.get_mark(mark_start) {
-                Some(p) => p,
-                None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
+            let Some(from) = frame.get_mark(mark_start) else {
+                return CmdResult::Failure(CmdFailure::MarkNotDefined);
             };
-            let to = match frame.get_mark(mark_end) {
-                Some(p) => p,
-                None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
+            let Some(to) = frame.get_mark(mark_end) else {
+                return CmdResult::Failure(CmdFailure::MarkNotDefined);
             };
             let txt = {
                 let start_idx = frame.to_char_index(&from);
@@ -175,9 +167,8 @@ impl ExecutionContext<'_> {
 
         // Delete from source frame.
         {
-            let src_frame = match self.frame_set.get_frame_mut(&src_frame_name) {
-                Some(f) => f,
-                None => return CmdResult::Failure(CmdFailure::OutOfRange),
+            let Some(src_frame) = self.frame_set.get_frame_mut(&src_frame_name) else {
+                return CmdResult::Failure(CmdFailure::OutOfRange);
             };
             src_frame.delete(src_from, src_to);
             // After delete, both src_mark_start and src_mark_end are now at src_from.
@@ -199,9 +190,8 @@ impl ExecutionContext<'_> {
     /// Moves dot to the end (None/Plus) or start (Minus) of the span.
     /// Fails if the span is in a different frame.
     pub(crate) fn cmd_span_jump(&mut self, lead: LeadParam, tpars: &[TrailParam]) -> CmdResult {
-        let span_name = match parse_span_name(&tpars[0]) {
-            Some(n) => n,
-            None => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Some(span_name) = parse_span_name(&tpars[0]) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
 
         let goto_end = match lead {
@@ -211,22 +201,19 @@ impl ExecutionContext<'_> {
         };
 
         let (target_pos, span_frame_name) = {
-            let span = match self.frame_set.get_span(&span_name) {
-                Some(s) => s,
-                None => return CmdResult::Failure(CmdFailure::OutOfRange),
+            let Some(span) = self.frame_set.get_span(&span_name) else {
+                return CmdResult::Failure(CmdFailure::OutOfRange);
             };
-            let frame = match self.frame_set.get_frame(&span.frame_name) {
-                Some(f) => f,
-                None => return CmdResult::Failure(CmdFailure::OutOfRange),
+            let Some(frame) = self.frame_set.get_frame(&span.frame_name) else {
+                return CmdResult::Failure(CmdFailure::OutOfRange);
             };
             let mark = if goto_end {
                 span.mark_end
             } else {
                 span.mark_start
             };
-            let pos = match frame.get_mark(mark) {
-                Some(p) => p,
-                None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
+            let Some(pos) = frame.get_mark(mark) else {
+                return CmdResult::Failure(CmdFailure::MarkNotDefined);
             };
             (pos, span.frame_name.clone())
         };
@@ -256,9 +243,8 @@ impl ExecutionContext<'_> {
             return CmdResult::Failure(CmdFailure::SyntaxError);
         }
 
-        let span_name = match parse_span_name(&tpars[0]) {
-            Some(n) => n,
-            None => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Some(span_name) = parse_span_name(&tpars[0]) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
 
         // Resolve value: span dereference if delim == '$', otherwise literal.
@@ -277,19 +263,17 @@ impl ExecutionContext<'_> {
             // Update existing span in-place.
             let (frame_name, mark_start, mark_end, from, _to) = {
                 let span = self.frame_set.get_span(&span_name).unwrap();
-                let fname = span.frame_name.clone();
+                let frame_name = span.frame_name.clone();
                 let ms = span.mark_start;
                 let me = span.mark_end;
-                let frame = self.frame_set.get_frame(&fname).unwrap();
-                let from = match frame.get_mark(ms) {
-                    Some(p) => p,
-                    None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
+                let frame = self.frame_set.get_frame(&frame_name).unwrap();
+                let Some(from) = frame.get_mark(ms) else {
+                    return CmdResult::Failure(CmdFailure::MarkNotDefined);
                 };
-                let to = match frame.get_mark(me) {
-                    Some(p) => p,
-                    None => return CmdResult::Failure(CmdFailure::MarkNotDefined),
+                let Some(to) = frame.get_mark(me) else {
+                    return CmdResult::Failure(CmdFailure::MarkNotDefined);
                 };
-                (fname, ms, me, from, to)
+                (frame_name, ms, me, from, to)
             };
 
             {
@@ -352,8 +336,7 @@ impl ExecutionContext<'_> {
                 }
                 None => String::from("<undefined>"),
             };
-            self.screen
-                .output_line(&format!("{name:<32} {preview}"));
+            self.screen.output_line(&format!("{name:<32} {preview}"));
         }
         CmdResult::Success
     }
@@ -367,21 +350,18 @@ impl ExecutionContext<'_> {
             return CmdResult::Failure(CmdFailure::SyntaxError);
         }
 
-        let span_name = match parse_span_name(&tpars[0]) {
-            Some(n) => n,
-            None => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Some(span_name) = parse_span_name(&tpars[0]) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
 
         // Read the span's text.
-        let text = match self.read_span_or_frame_text(&span_name) {
-            Some(t) => t,
-            None => return CmdResult::Failure(CmdFailure::OutOfRange),
+        let Some(text) = self.read_span_or_frame_text(&span_name) else {
+            return CmdResult::Failure(CmdFailure::OutOfRange);
         };
 
         // Compile it.
-        let compiled = match compile(&text) {
-            Ok(c) => c,
-            Err(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
+        let Ok(compiled) = compile(&text) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
 
         // Store the compiled code on the span.

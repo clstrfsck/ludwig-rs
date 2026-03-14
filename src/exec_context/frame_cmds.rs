@@ -163,15 +163,14 @@ impl ExecutionContext<'_> {
         let current_top = self.frame_set.current_frame().margin_top;
         let current_bottom = self.frame_set.current_frame().margin_bottom;
 
-        let directives = match parse_ep(
+        let Ok(directives) = parse_ep(
             &raw,
             current_left,
             current_right,
             current_top,
             current_bottom,
-        ) {
-            Ok(d) => d,
-            Err(()) => return CmdResult::Failure(CmdFailure::SyntaxError),
+        ) else {
+            return CmdResult::Failure(CmdFailure::SyntaxError);
         };
 
         let dot_col = self.frame_set.current_frame().dot().column;
@@ -278,9 +277,12 @@ impl ExecutionContext<'_> {
         match op {
             EpTabOp::Default => {
                 let stops = default_tab_stops();
-                self.frame_set.current_frame_mut().tab_stops = stops.clone();
+                self.frame_set
+                    .current_frame_mut()
+                    .tab_stops
+                    .clone_from(&stops);
                 if set_initial {
-                    self.frame_set.defaults.tab_stops = stops;
+                    self.frame_set.defaults.tab_stops.clone_from(&stops);
                 }
             }
 
@@ -306,9 +308,12 @@ impl ExecutionContext<'_> {
                 let stops: Vec<bool> = (0..crate::frame::TAB_STOPS_LEN)
                     .map(|i| i % n == 0)
                     .collect();
-                self.frame_set.current_frame_mut().tab_stops = stops.clone();
+                self.frame_set
+                    .current_frame_mut()
+                    .tab_stops
+                    .clone_from(&stops);
                 if set_initial {
-                    self.frame_set.defaults.tab_stops = stops;
+                    self.frame_set.defaults.tab_stops.clone_from(&stops);
                 }
             }
 
@@ -319,9 +324,12 @@ impl ExecutionContext<'_> {
                         stops[col] = true;
                     }
                 }
-                self.frame_set.current_frame_mut().tab_stops = stops.clone();
+                self.frame_set
+                    .current_frame_mut()
+                    .tab_stops
+                    .clone_from(&stops);
                 if set_initial {
-                    self.frame_set.defaults.tab_stops = stops;
+                    self.frame_set.defaults.tab_stops.clone_from(&stops);
                 }
             }
 
@@ -341,9 +349,12 @@ impl ExecutionContext<'_> {
                         stops[i] = ch != ' ' && line_chars[i - 1] == ' ';
                     }
                 }
-                self.frame_set.current_frame_mut().tab_stops = stops.clone();
+                self.frame_set
+                    .current_frame_mut()
+                    .tab_stops
+                    .clone_from(&stops);
                 if set_initial {
-                    self.frame_set.defaults.tab_stops = stops;
+                    self.frame_set.defaults.tab_stops.clone_from(&stops);
                 }
             }
 
@@ -408,9 +419,8 @@ impl ExecutionContext<'_> {
                         _ => return Err(()),
                     }
                 }
-                let left_col = match left_pos {
-                    Some(p) => p,
-                    None => return Err(()),
+                let Some(left_col) = left_pos else {
+                    return Err(());
                 };
                 let right_col = match right_pos {
                     Some(p) => p + 1,
@@ -433,13 +443,14 @@ impl ExecutionContext<'_> {
                     .delete(Position::new(dot_line, 0), Position::new(next_line, 0));
 
                 // Apply.
-                self.frame_set.current_frame_mut().left_margin = left_col;
-                self.frame_set.current_frame_mut().right_margin = right_col;
-                self.frame_set.current_frame_mut().tab_stops = stops.clone();
+                let current_frame = self.frame_set.current_frame_mut();
+                current_frame.left_margin = left_col;
+                current_frame.right_margin = right_col;
+                current_frame.tab_stops.clone_from(&stops);
                 if set_initial {
                     self.frame_set.defaults.left_margin = left_col;
                     self.frame_set.defaults.right_margin = right_col;
-                    self.frame_set.defaults.tab_stops = stops;
+                    self.frame_set.defaults.tab_stops.clone_from(&stops);
                 }
             }
         }

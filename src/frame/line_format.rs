@@ -4,6 +4,7 @@ use crate::cmd_result::{CmdFailure, CmdResult};
 use crate::lead_param::LeadParam;
 use crate::marks::MarkId;
 use crate::position::Position;
+use crate::sat;
 
 use super::Frame;
 
@@ -242,7 +243,7 @@ impl LineFormatCommands for Frame {
                             }
 
                             debit += fill_ratio;
-                            let n = (debit + 0.5) as i32;
+                            let n = debit.round() as i32;
                             if n > 0 {
                                 self.insert_at(Position::new(line, pos), &" ".repeat(n as usize));
                                 debit -= f64::from(n);
@@ -335,9 +336,10 @@ impl LineFormatCommands for Frame {
             // Compute spaces to add (may be negative, meaning spaces to remove).
             // Formula derived from C++ word_centre (translated to 0-based indexing):
             //   space_to_add = (right - left - line_len + first_ns) / 2 - (first_ns - left)
-            let space_to_add: isize =
-                isize::midpoint(right as isize - left as isize - line_len as isize, first_ns as isize)
-                    - (first_ns as isize - left as isize);
+            let space_to_add: isize = isize::midpoint(
+                right as isize - left as isize - line_len as isize,
+                first_ns as isize,
+            ) - (first_ns as isize - left as isize);
 
             if space_to_add > 0 {
                 self.insert_at(
@@ -345,7 +347,7 @@ impl LineFormatCommands for Frame {
                     &" ".repeat(space_to_add as usize),
                 );
             } else if space_to_add < 0 {
-                let to_remove = (-space_to_add) as usize;
+                let to_remove = sat::isize_to_usize(-space_to_add);
                 self.delete(
                     Position::new(line, left),
                     Position::new(line, left + to_remove),

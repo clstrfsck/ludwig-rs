@@ -132,7 +132,7 @@ impl EditCommands for Frame {
                 let count = self.dot().column;
                 self.case_change_backward(count, mode)
             }
-            _ => CmdResult::Failure(CmdFailure::SyntaxError),
+            LeadParam::Marker(_) => CmdResult::Failure(CmdFailure::SyntaxError),
         }
     }
 
@@ -196,17 +196,19 @@ impl EditCommands for Frame {
             }
             LeadParam::Marker(id) => {
                 if let Some(mark_pos) = self.get_mark(id) {
-                    if mark_pos.line == dot.line {
+                    match mark_pos.line.cmp(&dot.line) {
                         // Mark is on the same line as dot, so nothing to delete.
-                        CmdResult::Success
-                    } else if mark_pos.line < dot.line {
-                        // Mark is above dot, so delete backward (lines above dot).
-                        let count = dot.line - mark_pos.line;
-                        self.kill_lines_backward(mark_pos.line, count)
-                    } else {
-                        // Mark is below dot, so delete forward (lines below dot).
-                        let count = mark_pos.line - dot.line;
-                        self.kill_lines_forward(dot.line, count)
+                        std::cmp::Ordering::Equal => CmdResult::Success,
+                        std::cmp::Ordering::Less => {
+                            // Mark is above dot, so delete backward (lines above dot).
+                            let count = dot.line - mark_pos.line;
+                            self.kill_lines_backward(mark_pos.line, count)
+                        }
+                        std::cmp::Ordering::Greater => {
+                            // Mark is below dot, so delete forward (lines below dot).
+                            let count = mark_pos.line - dot.line;
+                            self.kill_lines_forward(dot.line, count)
+                        }
                     }
                 } else {
                     CmdResult::Failure(CmdFailure::MarkNotDefined)
