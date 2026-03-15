@@ -347,7 +347,7 @@ impl LineFormatCommands for Frame {
                     &" ".repeat(space_to_add as usize),
                 );
             } else if space_to_add < 0 {
-                let to_remove = sat::isize_to_usize(-space_to_add);
+                let to_remove = sat::signed_to_usize(-space_to_add);
                 self.delete(
                     Position::new(line, left),
                     Position::new(line, left + to_remove),

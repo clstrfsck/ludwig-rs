@@ -135,13 +135,12 @@ impl Viewport {
             let screen_row = dot_line - top;
             if screen_row < margin && top > 0 {
                 // Too close to top — scroll down (reveal lines above)
-                let scroll = sat::usize_to_i32(top.min(margin - screen_row));
-                FixupAction::ScrollV(-scroll)
+                FixupAction::ScrollV(-sat::usize_to_signed::<i32>(top.min(margin - screen_row)))
             } else if screen_row >= height - margin && screen_row < height {
                 // Too close to bottom — scroll up (reveal lines below)
                 let scroll = (screen_row - (height - margin) + 1).min(max_up_scroll);
                 if scroll > 0 {
-                    FixupAction::ScrollV(sat::usize_to_i32(scroll))
+                    FixupAction::ScrollV(sat::usize_to_signed(scroll))
                 } else {
                     FixupAction::None
                 }
@@ -153,7 +152,7 @@ impl Viewport {
             let delta = top - dot_line;
             if delta <= height {
                 let scroll = delta + margin.min(top.saturating_sub(delta));
-                FixupAction::ScrollV(-sat::usize_to_i32(scroll))
+                FixupAction::ScrollV(-sat::usize_to_signed::<i32>(scroll))
             } else {
                 FixupAction::Redraw
             }
@@ -163,7 +162,7 @@ impl Viewport {
             if delta <= height {
                 let scroll = (delta + margin).min(max_up_scroll);
                 if scroll > 0 {
-                    FixupAction::ScrollV(sat::usize_to_i32(scroll))
+                    FixupAction::ScrollV(sat::usize_to_signed(scroll))
                 } else {
                     FixupAction::None
                 }
@@ -207,9 +206,9 @@ impl Viewport {
         match action {
             FixupAction::ScrollV(n) => {
                 if *n > 0 {
-                    self.top_line += sat::i32_to_usize(*n);
+                    self.top_line += sat::signed_to_usize(*n);
                 } else {
-                    self.top_line = self.top_line.saturating_sub(sat::i32_to_usize(-n));
+                    self.top_line = self.top_line.saturating_sub(sat::signed_to_usize(-n));
                 }
             }
             FixupAction::SlideH(new_offset) => {
@@ -220,9 +219,11 @@ impl Viewport {
                 new_offset,
             } => {
                 if *scroll_v > 0 {
-                    self.top_line += sat::i32_to_usize(*scroll_v);
+                    self.top_line += sat::signed_to_usize(*scroll_v);
                 } else {
-                    self.top_line = self.top_line.saturating_sub(sat::i32_to_usize(-scroll_v));
+                    self.top_line = self
+                        .top_line
+                        .saturating_sub(sat::signed_to_usize(-scroll_v));
                 }
                 self.offset = *new_offset;
             }

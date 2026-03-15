@@ -36,9 +36,9 @@ impl SearchCommands for Frame {
     fn cmd_next(&mut self, lead_param: LeadParam, tpar: &TrailParam) -> CmdResult {
         let count = match lead_param {
             LeadParam::None | LeadParam::Plus => 1,
-            LeadParam::Pint(n) => sat::usize_to_isize(n),
+            LeadParam::Pint(n) => sat::usize_to_signed(n),
             LeadParam::Minus => -1,
-            LeadParam::Nint(n) => -sat::usize_to_isize(n),
+            LeadParam::Nint(n) => -sat::usize_to_signed::<isize>(n),
             _ => return CmdResult::Failure(CmdFailure::SyntaxError),
         };
         self.nextbridge(count, tpar, false)
@@ -66,9 +66,9 @@ impl SearchCommands for Frame {
         // Determine count and direction
         let (count, replace_all) = match lead_param {
             LeadParam::None | LeadParam::Plus => (1, false),
-            LeadParam::Pint(n) => (sat::usize_to_isize(n), false),
+            LeadParam::Pint(n) => (sat::usize_to_signed(n), false),
             LeadParam::Minus => (-1, false),
-            LeadParam::Nint(n) => (-sat::usize_to_isize(n), false),
+            LeadParam::Nint(n) => (-sat::usize_to_signed::<isize>(n), false),
             LeadParam::Pindef => (1, true), // >R: replace all forward
             LeadParam::Nindef => (-1, true), // <R: replace all backward
             LeadParam::Marker(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
@@ -219,7 +219,7 @@ impl Frame {
         let num_lines = self.line_count();
 
         if count > 0 {
-            match self.nextbridge_forward(sat::isize_to_usize(count), &chars, bridge, num_lines) {
+            match self.nextbridge_forward(sat::signed_to_usize(count), &chars, bridge, num_lines) {
                 Some(pos) => {
                     self.set_mark_at(MarkId::Equals, original_dot);
                     self.set_dot(pos);
@@ -228,7 +228,7 @@ impl Frame {
                 None => CmdResult::Failure(CmdFailure::OutOfRange),
             }
         } else {
-            match self.nextbridge_backward(sat::isize_to_usize(-count), &chars, bridge, num_lines) {
+            match self.nextbridge_back(sat::signed_to_usize(-count), &chars, bridge, num_lines) {
                 Some(pos) => {
                     self.set_mark_at(MarkId::Equals, original_dot);
                     self.set_dot(pos);
@@ -303,7 +303,7 @@ impl Frame {
     /// For BR: starts from dot-1, searches for chars NOT IN set.
     ///
     /// Returns position AFTER the found character (dot lands after the match).
-    fn nextbridge_backward(
+    fn nextbridge_back(
         &self,
         mut count: usize,
         chars: &HashSet<char>,
@@ -316,9 +316,9 @@ impl Frame {
         // Start column: for both N and BR, start from dot.column - 1.
         // But for bridge, we don't skip an additional char.
         let start_offset: isize = if bridge {
-            sat::usize_to_isize(dot.column) - 1
+            sat::usize_to_signed::<isize>(dot.column) - 1
         } else {
-            sat::usize_to_isize(dot.column) - 2
+            sat::usize_to_signed::<isize>(dot.column) - 2
         };
 
         // If start_offset < 0, we need to go to previous line
@@ -329,7 +329,7 @@ impl Frame {
                 // dot was past last line; go to last real line
                 line = num_lines - 1;
                 let line_len = self.line_length_excluding_newline(line);
-                col = sat::usize_to_isize(line_len); // virtual space at EOL
+                col = sat::usize_to_signed(line_len); // virtual space at EOL
             }
 
             if col < 0 {
@@ -350,31 +350,31 @@ impl Frame {
                 line -= 1;
                 let line_len = self.line_length_excluding_newline(line);
                 // Check virtual space (space at EOL) first
-                col = sat::usize_to_isize(line_len);
+                col = sat::usize_to_signed(line_len);
             }
 
             let line_len = self.line_length_excluding_newline(line);
             let line_start = self.rope.line_to_char(line);
 
             // Check virtual space at EOL
-            if sat::isize_to_usize(col) > line_len {
+            if sat::signed_to_usize(col) > line_len {
                 if char_matches(' ', chars, bridge) {
                     count -= 1;
                     if count == 0 {
-                        return Some(Position::new(line, sat::isize_to_usize(col) + 1));
+                        return Some(Position::new(line, sat::signed_to_usize(col) + 1));
                     }
                 }
-                col = sat::usize_to_isize(line_len) - 1;
+                col = sat::usize_to_signed::<isize>(line_len) - 1;
             }
 
             // Scan backward on this line
             while col >= 0 {
-                let ch = self.rope.char(line_start + sat::isize_to_usize(col));
+                let ch = self.rope.char(line_start + sat::signed_to_usize(col));
                 if char_matches(ch, chars, bridge) {
                     count -= 1;
                     if count == 0 {
                         // Result position is AFTER the found char
-                        return Some(Position::new(line, sat::isize_to_usize(col) + 1));
+                        return Some(Position::new(line, sat::signed_to_usize(col) + 1));
                     }
                 }
                 col -= 1;
@@ -392,7 +392,7 @@ impl Frame {
             }
             line -= 1;
             let prev_line_len = self.line_length_excluding_newline(line);
-            col = sat::usize_to_isize(prev_line_len) - 1;
+            col = sat::usize_to_signed::<isize>(prev_line_len) - 1;
         }
     }
 }
@@ -454,14 +454,14 @@ impl Frame {
         let line_len = self.line_length_excluding_newline(line);
         // Start searching from one position before dot (or end of line if dot is beyond)
         let effective_col = dot.column.min(line_len);
-        let mut col = sat::usize_to_isize(effective_col.saturating_sub(1));
+        let mut col = sat::usize_to_signed::<isize>(effective_col.saturating_sub(1));
 
         loop {
             let line_len = self.line_length_excluding_newline(line);
             let line_start = self.rope.line_to_char(line);
 
             while col >= 0 {
-                let c = sat::isize_to_usize(col);
+                let c = sat::signed_to_usize(col);
                 if c + pat_len <= line_len
                     && self.matches_at_pos(line_start + c, &pat_chars, case_sensitive)
                 {
@@ -475,7 +475,7 @@ impl Frame {
             }
             line -= 1;
             let prev_line_len = self.line_length_excluding_newline(line);
-            col = sat::usize_to_isize(prev_line_len.saturating_sub(1));
+            col = sat::usize_to_signed::<isize>(prev_line_len.saturating_sub(1));
         }
     }
 
@@ -551,9 +551,9 @@ impl Frame {
     ) -> CmdResult {
         let (count, replace_all) = match lead_param {
             LeadParam::None | LeadParam::Plus => (1, false),
-            LeadParam::Pint(n) => (sat::usize_to_isize(n), false),
+            LeadParam::Pint(n) => (sat::usize_to_signed::<isize>(n), false),
             LeadParam::Minus => (-1, false),
-            LeadParam::Nint(n) => (-sat::usize_to_isize(n), false),
+            LeadParam::Nint(n) => (-sat::usize_to_signed::<isize>(n), false),
             LeadParam::Pindef => (1, true),
             LeadParam::Nindef => (-1, true),
             LeadParam::Marker(_) => return CmdResult::Failure(CmdFailure::SyntaxError),
